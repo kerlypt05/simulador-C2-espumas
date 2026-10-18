@@ -1,0 +1,984 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulador de bizcochos de espuma</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+</head>
+<body>
+<style>
+/* Banco de comparación: dos carriles sincronizados (AF | SEP) a la izquierda;
+   lectura de la etapa y gráficas con cursor común a la derecha. Sin recursos externos. */
+:root{
+  --paper:#FAF8F5; --panel:#FFFFFF; --tint:#F4EEE8; --line:#E4DAD1;
+  --ink:#1E1718; --body:#3B3234; --muted:#776C69;
+  --accent:#C00000; --accent-tint:#FBEDEC; --gold:#B9862C;
+  --c-af:#C00000; --c-sep:#C08A22;
+  --serif:"Source Serif 4","Source Serif Pro",Georgia,"Times New Roman",serif;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#161112; --panel:#201819; --tint:#2A2122; --line:#3B2F31;
+    --ink:#F4EEE8; --body:#DDD3CA; --muted:#A99C97;
+    --accent:#EC5A50; --accent-tint:#3A1D1E; --gold:#E2B35A;
+    --c-af:#EC5A50; --c-sep:#E2B35A; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#161112; --panel:#201819; --tint:#2A2122; --line:#3B2F31;
+  --ink:#F4EEE8; --body:#DDD3CA; --muted:#A99C97;
+  --accent:#EC5A50; --accent-tint:#3A1D1E; --gold:#E2B35A;
+  --c-af:#EC5A50; --c-sep:#E2B35A; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--paper);color:var(--body);font-family:var(--sans);font-size:14.5px;line-height:1.5;margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:14px 28px}
+h1,h2,h3{font-family:var(--serif);color:var(--ink);font-weight:600;margin:0;text-wrap:balance}
+p{margin:0}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.mono{font-family:var(--mono)}
+
+/* Cabecera y controles */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 20px}
+.top .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.top h1{font-size:clamp(21px,2.2vw,28px);line-height:1.15;margin-top:3px}
+.top .lead{font-size:13.5px;color:var(--body);margin-top:3px;max-width:70ch}
+.ctl{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:6px 13px;cursor:pointer;font-size:13.5px;font-weight:500;min-height:34px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn svg{width:13px;height:13px;fill:currentColor;flex:none}
+.btn.icon{padding:6px 9px}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;padding:0 4px}
+.chk input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:2px;background:var(--tint)}
+.seg button{border:0;background:transparent;color:var(--muted);padding:4px 10px;border-radius:999px;cursor:pointer;font-size:12.5px;min-height:28px}
+.seg button[aria-pressed="true"]{background:var(--panel);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.1)}
+
+/* Línea de etapas */
+.steps{display:flex;gap:4px;user-select:none;touch-action:none;cursor:pointer}
+.step{flex-grow:var(--d);flex-basis:0;min-width:0;display:flex;flex-direction:column;gap:5px;border:0;background:none;padding:0;text-align:left;cursor:pointer}
+.step .bar{height:7px;border-radius:4px;background:var(--line);position:relative;overflow:hidden}
+.step .bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--ink);border-radius:4px}
+.step .nm{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step .nm b{font-family:var(--mono);font-weight:500;font-size:11px;margin-right:5px}
+.step.on .nm{color:var(--ink);font-weight:600}
+.step.on .bar i{background:var(--accent)}
+.steps-wrap{display:flex;flex-direction:column;gap:6px}
+.proc{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline;font-size:13px;color:var(--body)}
+.proc .clock{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink);font-weight:500}
+
+/* Rejilla principal */
+.main{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px;align-items:start}
+.left,.right{display:flex;flex-direction:column;gap:12px;min-width:0}
+.lanes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.lane{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px;display:grid;grid-row:span 4;grid-template-rows:subgrid;row-gap:8px;min-width:0;align-content:start}
+.lane header{display:flex;flex-direction:column;gap:1px}
+.lane .nm{display:flex;align-items:center;gap:8px}
+.lane h2{font-size:17px;line-height:1.2}
+.sw{width:18px;height:3px;border-radius:2px;flex:none;background:var(--c)}
+.sw.dash{background:repeating-linear-gradient(90deg,var(--c) 0 6px,transparent 6px 9px)}
+.lane .recipe{font-size:12px;color:var(--muted)}
+.cv{position:relative;width:100%;aspect-ratio:1/0.86;max-width:100%;border-radius:8px;overflow:hidden;background:var(--tint)}
+.cv canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.cv .st{position:absolute;top:7px;left:7px;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:999px;background:var(--panel);color:var(--ink);border:1px solid var(--line);white-space:nowrap;max-width:calc(100% - 14px);overflow:hidden;text-overflow:ellipsis}
+.lupa{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center}
+.lupa canvas{width:92px;height:92px;display:block}
+.lupa .cap{font-size:12.5px;line-height:1.4;color:var(--body);display:flex;flex-direction:column;gap:4px;min-width:0}
+.lupa .cap b{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lupa .seg button{font-size:11.5px;padding:2px 9px;min-height:24px}
+.chips{display:grid;grid-template-columns:repeat(var(--cols,2),minmax(0,1fr));gap:6px;align-content:start}
+.chip{display:flex;flex-direction:column;gap:1px;align-items:flex-start;text-align:left;border:1px solid var(--line);background:var(--paper);border-radius:8px;padding:6px 8px;cursor:pointer;min-width:0}
+.chip:hover{border-color:var(--muted)}
+.chip[aria-pressed="true"]{border-color:var(--c);box-shadow:inset 0 0 0 1px var(--c)}
+.chip .k{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.chip .v{font-size:18px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.2}
+.chip .v small{font-size:12px;font-weight:400;color:var(--muted);margin-left:3px}
+.chip .t{font-size:10.5px;color:var(--muted)}
+.ficha{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;display:flex;flex-direction:column;gap:4px;font-size:13.5px}
+.ficha .h{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.ficha h3{font-size:15.5px}
+.legend-loss{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--body);align-items:center}
+.legend-loss b{font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.legend-loss span{display:inline-flex;align-items:center;gap:6px}
+.legend-loss svg{width:22px;height:14px;flex:none}
+
+/* Lectura de la etapa */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.stage-h{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.stage-h h2{font-size:21px}
+.stage-h .when{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.narr{display:flex;flex-direction:column;gap:9px;margin-top:8px}
+.narr .doit{font-size:13.5px;border-left:2px solid var(--ink);padding-left:10px;color:var(--ink)}
+.narr .doit b{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;display:block}
+.narr p.obs{max-width:68ch}
+.claims{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:5px 10px;align-items:baseline;margin:0;padding:8px 0 0;border-top:1px solid var(--line);list-style:none;font-size:12.5px}
+.claims li{display:contents}
+.tag{font-style:normal;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;padding:1px 6px;border-radius:4px;white-space:nowrap;justify-self:start}
+.k-f{background:var(--ink);color:var(--paper)}
+.k-i{border:1px solid var(--ink);color:var(--ink)}
+.k-o{background:var(--tint);color:var(--muted)}
+.claims .src{color:var(--muted)}
+
+/* Gráficas */
+.charts{display:flex;flex-direction:column;gap:6px}
+.charts-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.charts-h h2{font-size:16px}
+.lg{display:flex;gap:12px;font-size:12px;color:var(--body)}
+.lg span{display:inline-flex;align-items:center;gap:6px}
+.lg svg{width:24px;height:8px}
+.cgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
+.ch{min-width:0}
+.ch h3{font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--ink)}
+.ch h3 small{font-weight:400;color:var(--muted);font-size:11.5px}
+.ch svg{width:100%;height:auto;display:block;touch-action:none;cursor:ew-resize;overflow:visible}
+
+/* Pie */
+.foot{display:flex;flex-direction:column;gap:8px}
+.notice{font-size:13px;color:var(--ink);background:var(--accent-tint);border-radius:8px;padding:8px 12px}
+details.more{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;font-size:13px}
+details.more summary{cursor:pointer;font-weight:600;color:var(--ink)}
+details.more .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:10px}
+details.more h3{font-size:14.5px;margin-bottom:6px}
+details.more ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+details.more a{color:var(--accent);word-break:break-word}
+
+@media (min-width:1021px){
+  .top h1{font-size:24px}
+  .top .lead{font-size:13px}
+  .cv{aspect-ratio:1/0.72}
+  .lupa canvas{width:78px;height:78px}
+  .lane .recipe{font-size:11.5px}
+  .narr .obs{font-size:13.5px}
+  .card{padding:12px 14px}
+  .stage-h h2{font-size:19px}
+}
+@media (max-width:1020px){
+  .main{grid-template-columns:1fr}
+  }
+@media (max-width:560px){
+  body{font-size:14px}
+  .lanes{gap:8px}
+  .lane{padding:7px;gap:6px}
+  .lane h2{font-size:14.5px}
+  .lane .recipe{font-size:11px}
+  .lupa{grid-template-columns:1fr;justify-items:start}
+  .lupa canvas{width:72px;height:72px}
+  .lupa .cap{font-size:11.5px}
+  .chips{--cols:1!important}
+  .chip .v{font-size:16px}
+  .step .nm{font-size:11px}
+  .step .nm .txt{display:none}
+  .step .nm .sh{display:inline}
+  .cgrid{grid-template-columns:1fr}
+  .claims{grid-template-columns:1fr;gap:2px}
+  .claims .tag{margin-top:6px}
+  .btn .lbl{display:none}
+}
+.step .nm .sh{display:none}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Panificación y Pastelería · Bloque 2 · C2</p>
+      <h1>Clara sola frente a espumas separadas</h1>
+      <p class="lead">Dos bizcochos con 120 g de huevo, 60 g de azúcar y 60 g de harina. La única diferencia es la yema. Sigue el aire desde las varillas hasta el corte.</p>
+    </div>
+    <div class="ctl" role="group" aria-label="Controles">
+      <button class="btn icon" id="prev" type="button" aria-label="Etapa anterior"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 2.5v11L3.5 8z"/></svg></button>
+      <button class="btn primary" id="play" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="playIcon" d="M4 2.5v11l9-5.5z"/></svg><span id="playTxt">Reproducir</span></button>
+      <button class="btn icon" id="next" type="button" aria-label="Etapa siguiente"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 2.5v11l7-5.5z"/></svg></button>
+      <button class="btn" id="restart" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.2a5.8 5.8 0 1 1-5.5 4H1l2.6-3 2.6 3H4.3A4.1 4.1 0 1 0 8 3.9z"/></svg><span class="lbl">Reiniciar</span></button>
+      <label class="chk" for="stopEach"><input type="checkbox" id="stopEach">Parar en cada etapa</label>
+      <span class="seg" role="group" aria-label="Velocidad"><button type="button" data-sp="0.5" aria-pressed="false">0,5×</button><button type="button" data-sp="1" aria-pressed="true">1×</button><button type="button" data-sp="2" aria-pressed="false">2×</button></span>
+      <button class="btn icon" id="theme" type="button" aria-label="Cambiar tema claro u oscuro"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5a6.5 6.5 0 1 0 0 13zm0 1.5v10a5 5 0 0 1 0-10z"/></svg></button>
+    </div>
+  </header>
+
+  <div class="steps-wrap">
+    <div class="steps" id="steps" tabindex="0" role="slider" aria-label="Avance de la simulación" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+    <p class="proc"><span id="procWhat"></span><span class="clock" id="procClock"></span></p>
+  </div>
+
+  <div class="main">
+    <section class="left" aria-label="Los dos bizcochos">
+      <div class="lanes" id="lanes"></div>
+      <div class="legend-loss" id="lossLegend" hidden>
+        <b>Formas de perder aire</b>
+        <span><svg viewBox="0 0 22 14" aria-hidden="true"><rect x="1" y="9" width="20" height="4" rx="1" fill="#C9A86A" opacity=".7"/><path d="M7 2v5M11 3v5M15 2v5" stroke="#8B6E4E" stroke-width="1.2"/></svg>Drenaje: el líquido baja entre las burbujas</span>
+        <span><svg viewBox="0 0 22 14" aria-hidden="true"><circle cx="8" cy="7" r="4.5" fill="#fff" stroke="#8B6E4E"/><circle cx="14" cy="7" r="4.5" fill="#fff" stroke="#8B6E4E"/><circle cx="11" cy="7" r="6.4" fill="none" stroke="var(--accent)" stroke-dasharray="2 2"/></svg>Coalescencia: dos burbujas se unen</span>
+        <span><svg viewBox="0 0 22 14" aria-hidden="true"><circle cx="6" cy="7" r="2.2" fill="#fff" stroke="#8B6E4E" stroke-dasharray="1.5 1.5"/><circle cx="14" cy="7" r="5.5" fill="#fff" stroke="#8B6E4E"/><path d="M8.5 7h2" stroke="var(--accent)" stroke-width="1.2"/></svg>Desproporción: la pequeña cede gas a la grande</span>
+      </div>
+      <article class="ficha" id="ficha" aria-live="polite"></article>
+    </section>
+
+    <section class="right">
+      <article class="card" id="narr" aria-live="polite"></article>
+      <article class="card charts">
+        <div class="charts-h"><h2 id="chTitle">Variables en el tiempo</h2>
+          <div class="lg"><span><svg viewBox="0 0 24 8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" stroke="var(--c-af)" stroke-width="2.4"/></svg>AF</span><span><svg viewBox="0 0 24 8" aria-hidden="true"><line x1="1" y1="4" x2="23" y2="4" stroke="var(--c-sep)" stroke-width="2.4" stroke-dasharray="6 3"/></svg>SEP</span></div></div>
+        <div class="cgrid" id="charts"></div>
+      </article>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <p class="notice">Todos los valores son teóricos o índices del modelo, no datos medidos: sirven para leer el sentido y el orden de los cambios. Condiciones del modelo: mismo volumen por molde (500 mL) y la misma fase líquida en los dos bizcochos, es decir, la misma agua aportada por el huevo y el mismo azúcar. Así, la diferencia entre ellos se debe solo a la yema.</p>
+    <details class="more">
+      <summary>Fuentes</summary>
+      <ul style="margin-top:10px">
+        <li>Godefroidt, T., Ooms, N., Pareyt, B., Brijs, K. y Delcour, J. A. (2019). Ingredient functionality during foam-type cake making: A review. <i>Comprehensive Reviews in Food Science and Food Safety, 18</i>, 1550–1562. <a href="https://doi.org/10.1111/1541-4337.12488" target="_blank" rel="noopener">doi:10.1111/1541-4337.12488</a></li>
+        <li>Wilderjans, E., Luyts, A., Brijs, K. y Delcour, J. A. (2013). Ingredient functionality in batter type cake making. <i>Trends in Food Science &amp; Technology, 30</i>(1), 6–15. <a href="https://doi.org/10.1016/j.tifs.2013.01.001" target="_blank" rel="noopener">doi:10.1016/j.tifs.2013.01.001</a></li>
+        <li>Raikos, V., Campbell, L. y Euston, S. R. (2007). Effects of sucrose and sodium chloride on foaming properties of egg white proteins. <i>Food Research International, 40</i>, 347–355. <a href="https://doi.org/10.1016/j.foodres.2006.10.008" target="_blank" rel="noopener">doi:10.1016/j.foodres.2006.10.008</a></li>
+        <li>Sahi, S. S. y Alava, J. M. (2003). Functionality of emulsifiers in sponge cake production. <i>Journal of the Science of Food and Agriculture, 83</i>(14), 1419–1429. <a href="https://doi.org/10.1002/jsfa.1557" target="_blank" rel="noopener">doi:10.1002/jsfa.1557</a></li>
+      </ul>
+    </details>
+  </footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+/* =====================================================================
+   PARÁMETROS EDITABLES
+   Valores del modelo didáctico (simulador de espumas v3), con los cambios
+   aprobados el 18/10/2026: mu0 de SEP = 1,0; fijación de 84 a 94 °C; viscosidad hasta ~10 %; enfriado;
+   molde de 500 mL. No son medidas: reproducen el sentido de los efectos.
+   ===================================================================== */
+const PARAMS = {
+  // AF: OR = aumento de volumen máximo al batir (× volumen de líquido); tau, n = forma de la curva de montado;
+  // s = estabilidad y e = elasticidad de la película (0–1); lf = fracción de aire perdida al plegar;
+  // mu0 = viscosidad inicial relativa; yg = refuerzo por gel de yema a ~65 °C; k = velocidad de calentamiento;
+  // T0 = temperatura del batido al entrar al horno (°C); rMed, sg = radio mediano y dispersión de las burbujas (dibujo).
+  AF:  {OR:3.6, tau:0.42, n:1.6, s:0.95, e:0.95, lf:0.14, mu0:1.0, yg:0,    k:1.0,  T0:24, rMed:2.7, sg:0.20},
+  SEP: {ORw:3.6, tauW:0.42, nW:1.6, ORy:1.3, tauY:0.16, nY:1.0,
+        s:0.70, e:0.72, lf:0.20, mu0:1.0, yg:0.35, k:0.94, T0:24, rMed:2.9, sg:0.24},
+  SEP_FRAC_CLARA: 0.6, SEP_FRAC_YEMA: 0.4,  // reparto del aire de SEP entre las dos espumas
+  LIQ_FLOUR: 0.27,        // volumen que añade la harina, relativo al líquido de huevo y azúcar
+  MASS_LIQ: 180, MASS_FLOUR: 60, VOL_LIQ: 150, // g de huevo + azúcar, g de harina, mL de líquido de referencia
+  FIX_START: 84, FIX_END: 94,   // °C: la fijación empieza y se completa (supuesto, dentro de 80–95 °C)
+  FIX_FREEZE: 0.9,        // avance de fijación a partir del cual la altura deja de cambiar
+  MOLD_ML: 500,           // volumen de batido por molde (igual en los dos)
+  R_HEIGHT: 1.15, R_CENTER: 1.12, // calentamiento relativo de la zona que marca la altura y del centro
+  LOSS_VISC: 0.38, LOSS_ELAST: 0.28, // peso de las pérdidas por viscosidad baja y por rotura de película
+  VISC_TAU: 26,           // °C: caída de la viscosidad con la temperatura; con 26 °C llega a ~10 % de la inicial antes de fijar
+                          // (valor medido en batidos con grasa; en batidos de espuma no hay medida). En la v3 era 45.
+  SHRINK_BASE: 0.035, SHRINK_FILM: 0.035, // contracción al enfriar = base + película × (1 − estabilidad)
+  T_ROOM: 25,             // °C: temperatura ambiente para el enfriado
+  // Duración de cada etapa en la animación (s, a velocidad 1×)
+  DUR: {batido:14, plegado:10, molde:5, horno:30, enfriado:11, corte:3}, // el corte ocupa los últimos 3 s del enfriado
+  // Tiempos reales de proceso (protocolo de obrador)
+  PROC: {batidoMin:6, cambioVelMin:3, plegadoMin:5}
+};
+
+/* ---------- utilidades ---------- */
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+const sig=x=>1/(1+Math.exp(-x));
+function rng(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function randn(r){let u=0,v=0;while(!u)u=r();while(!v)v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+function hex(h){h=String(h).trim().replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];return n.map(v=>isNaN(v)?128:v)}
+const mix=(a,b,t)=>[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];
+const rgb=(c,a)=>a===undefined?`rgb(${c[0]|0},${c[1]|0},${c[2]|0})`:`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+const fmt=(x,d)=>x.toLocaleString('es-ES',{minimumFractionDigits:d,maximumFractionDigits:d});
+const reduceMotion=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+const MONO='"IBM Plex Mono", ui-monospace, Menlo, monospace';
+
+/* =====================================================================
+   MODELO
+   ===================================================================== */
+const P=PARAMS;
+function whipG(w,tau,n){const g=x=>1-Math.exp(-Math.pow(x/tau,n));return g(clamp(w,0,1))/g(1)}
+function airClara(w){const p=P.SEP;return p.ORw*whipG(w,p.tauW,p.nW)}
+function airYema(w){const p=P.SEP;return p.ORy*whipG(w,p.tauY,p.nY)}
+// Aire batido (volumen de aire / volumen de líquido) con el avance del batido w (0–1)
+function airWhip(id,w){if(id==='SEP')return P.SEP_FRAC_CLARA*airClara(w)+P.SEP_FRAC_YEMA*airYema(w);const p=P.AF;return p.OR*whipG(w,p.tau,p.n)}
+// Avance de la fijación con la temperatura local: 0 a FIX_START, 1 a FIX_END
+const fixS=T=>smooth((T-P.FIX_START)/(P.FIX_END-P.FIX_START));
+// Curva de calentamiento: "pp" es el avance térmico local (tiempo × velocidad de calentamiento)
+const heatF=pp=>1-Math.exp(-Math.pow(pp/0.526,1.8));
+
+function buildModel(id){
+  const p=P[id];
+  const air0=airWhip(id,1), airF=air0*(1-p.lf);
+  const liq=1+P.LIQ_FLOUR, phi=airF/(airF+liq);
+  const rho=(P.MASS_LIQ+P.MASS_FLOUR)/(P.VOL_LIQ*(liq+airF));
+  const NP=900, PMAX=1.9;
+  const A={T:new Float32Array(NP+1),S:new Float32Array(NP+1),G:new Float32Array(NP+1),L:new Float32Array(NP+1),
+           LV:new Float32Array(NP+1),E:new Float32Array(NP+1),MU:new Float32Array(NP+1)};
+  let L1=0,L2=0,Tp=p.T0,Gp=1,iset=NP;
+  for(let i=0;i<=NP;i++){
+    const pp=PMAX*i/NP, T=p.T0+(100-p.T0)*heatF(pp), S=fixS(T);
+    const G=((T+273)/(p.T0+273))*(1+1.1*Math.pow((T-p.T0)/(100-p.T0),3)); // dilatación del aire + vapor
+    const mu=p.mu0*Math.exp(-(T-25)/P.VISC_TAU)*(1+p.yg*sig((T-65)/3))*(1+10*S); // viscosidad (índice)
+    const dT=T-Tp, dG=G-Gp; Tp=T; Gp=G;
+    L1+=P.LOSS_VISC*(1-p.s)/mu*(1-S)*dT/75;       // pérdidas favorecidas por viscosidad baja
+    L2+=P.LOSS_ELAST*(1-p.e)*Math.max(0,dG)*(1-S); // roturas de película al estirarse
+    const L=1-Math.exp(-(L1+L2));
+    A.T[i]=T;A.S[i]=S;A.G[i]=G;A.L[i]=L;A.LV[i]=1-Math.exp(-L1);A.MU[i]=mu;A.E[i]=(1-phi)+phi*G*(1-L);
+    if(iset===NP&&S>=P.FIX_FREEZE)iset=i;
+  }
+  const pset=PMAX*iset/NP, Eset=A.E[iset], Gset=A.G[iset], Lset=A.L[iset];
+  const phiFin=phi*Gset*(1-Lset)/Eset;
+  const at=(arr,pp)=>{const x=clamp(pp,0,PMAX)/PMAX*NP,i=Math.floor(x),j=Math.min(NP,i+1);return arr[i]+(arr[j]-arr[i])*(x-i)};
+  const mu0=A.MU[0];
+  const m={id,p,air0,airF,phi,rho,A,at,pset,Eset,Gset,Lset,phiFin,PMAX,mu0,
+    mass:rho*P.MOLD_ML, shrink:P.SHRINK_BASE+P.SHRINK_FILM*(1-p.s)};
+  m.Efin=Eset*(1-m.shrink); m.veSet=Eset/rho; m.ve=m.Efin/rho;
+  m.ppC=u=>p.k*u*P.R_CENTER;
+  m.ppH=u=>Math.min(p.k*u*P.R_HEIGHT,pset);
+  m.Tc=u=>at(A.T,m.ppC(u));
+  m.Sc=u=>at(A.S,m.ppC(u));
+  m.Vrel=u=>at(A.E,m.ppH(u));
+  m.eta=u=>at(A.MU,m.ppC(u))/mu0;
+  m.gas=u=>at(A.L,m.ppH(u));
+  m.uSetC=pset/(p.k*P.R_CENTER);
+  return m;
+}
+const IDS=['AF','SEP'];
+const M={AF:buildModel('AF'),SEP:buildModel('SEP')};
+
+/* ---------- reloj de la simulación ---------- */
+const D=P.DUR;
+const T_B=D.batido, T_P=T_B+D.plegado, T_M=T_P+D.molde, T_O=T_M+D.horno, T_END=T_O+D.enfriado;
+// Paso de expansión a fijación: cuando el centro de AF llega a 80 °C
+let U_SPLIT=0.5;{for(let i=0;i<=1000;i++){const u=i/1000;if(M.AF.Tc(u)>=80){U_SPLIT=u;break}}}
+const T_X=T_M+D.horno*U_SPLIT;
+const ST=[
+  {k:'batido',   n:'Batido',    t0:0,   t1:T_B},
+  {k:'plegado',  n:'Plegado',   t0:T_B, t1:T_P},
+  {k:'molde',    n:'Molde',     t0:T_P, t1:T_M},
+  {k:'expansion',n:'Expansión', t0:T_M, t1:T_X},
+  {k:'fijacion', n:'Fijación',  t0:T_X, t1:T_O},
+  {k:'enfriado', n:'Enfriado',  t0:T_O, t1:T_END},
+];
+const stageOf=t=>{for(let i=0;i<ST.length;i++)if(t<ST[i].t1)return i;return ST.length-1};
+const ovenU=t=>clamp((t-T_M)/D.horno,0,1);
+const coolC=t=>clamp((t-T_O)/(D.enfriado-D.corte),0,1);       // avance del enfriado (0–1)
+const cutP=t=>smooth((t-(T_END-D.corte))/(D.corte*0.8));       // aparición del corte
+
+/* ---------- variables en función del tiempo (horno y enfriado) ---------- */
+function Tt(id,t){const m=M[id];if(t<T_P)return 20;if(t<T_M)return m.p.T0;if(t<=T_O)return m.Tc(ovenU(t));
+  const Te=m.Tc(1);return P.T_ROOM+(Te-P.T_ROOM)*Math.exp(-3*coolC(t))}
+function Vt(id,t){const m=M[id];if(t<T_M)return 1;if(t<=T_O)return m.Vrel(ovenU(t));return m.Eset*(1-m.shrink*smooth(coolC(t)))}
+const expT=(id,t)=>(Vt(id,t)-1)*100;
+const retT=(id,t)=>t<T_M?100:(1-M[id].gas(ovenU(t)))*100;
+const fixT=(id,t)=>t<T_M?0:(t>=T_O?100:M[id].Sc(ovenU(t))*100);
+const etaT=(id,t)=>{if(t<T_M)return 1;if(t>T_O||M[id].Sc(ovenU(t))>=0.995)return null;return M[id].eta(ovenU(t))}; // al fijar del todo el centro, la pieza ya es sólida
+const veT=(id,t)=>Vt(id,t)/M[id].rho;
+const shrT=(id,t)=>t<T_O?0:M[id].shrink*smooth(coolC(t))*100;
+
+// Estado del batido antes del horno
+function preOven(id,t){
+  let air,fl,w=1,q=0;
+  if(t<T_B){w=t/T_B;air=airWhip(id,w);fl=0}
+  else if(t<T_P){q=(t-T_B)/D.plegado;air=M[id].air0*(1-P[id].lf*smooth(q/0.85));fl=smooth(q/0.6)}
+  else{air=M[id].airF;fl=1;q=1}
+  const liq=1+P.LIQ_FLOUR*fl, phi=air/(air+liq), rho=(P.MASS_LIQ+P.MASS_FLOUR*fl)/(P.VOL_LIQ*(liq+air));
+  return {air,fl,phi,rho,w,q,lost:t<T_B?0:1-air/M[id].air0};
+}
+
+/* =====================================================================
+   CONTENIDO (textos para el estudiante)
+   ===================================================================== */
+const TAGS={f:['FUENTE','k-f'],i:['INTERPRETACIÓN','k-i'],o:['CRITERIO DE OBRADOR','k-o']};
+const G19='Godefroidt et al. (2019)', W13='Wilderjans et al. (2013)';
+const NARR={
+  batido:{title:'Batir: meter aire y sostenerlo',
+    doit:'Batir 3 min a velocidad media (4 a 6) y 3 min a velocidad alta (8 a 9). En SEP, batir la clara y la yema por separado, cada una con la mitad del azúcar.',
+    obs:'La densidad dice cuánto aire ha entrado: cuanto más baja, más aire. Las varillas meten aire y lo parten en burbujas. En AF solo hay proteínas de clara para rodearlas: se despliegan en la superficie de la burbuja y se unen entre sí con puentes S–S. La película es fuerte, pero tarda en formarse. La espuma de yema de SEP sube pronto y se queda baja, porque la sostienen sobre todo lípidos: llegan antes a la burbuja, pero dan una película menos estable.',
+    claims:[['f','La película de proteína es fuerte y elástica, pero lenta de formar; la de lípido se forma rápido y es menos estable.',G19+'; Sahi y Alava (2003)'],
+      ['f','Al llegar a la burbuja, la ovoalbúmina expone grupos SH que forman puentes S–S con las moléculas vecinas.',G19],
+      ['f','Fenómeno A: el azúcar retiene la proteína en el líquido, así que la clara monta más despacio, y espesa la lámina, que drena menos.','Raikos et al. (2007): se transfiere el sentido del efecto'],
+      ['f','Fenómeno D: si se bate de más, la proteína coagula en la burbuja y la espuma pierde agua y volumen.','Raikos et al. (2007)'],
+      ['o','Espuma de clara granulosa y sin brillo: se ha batido de más. Parar en pico firme y brillante.',''],
+      ['i','Las curvas de montado son del modelo: muestran el sentido, no valores medidos.','']]},
+  plegado:{title:'Plegar: el aire perdido no vuelve',
+    doit:'Plegar la harina durante 5 min, sin batir. En SEP, unir antes las dos espumas con pocos movimientos.',
+    obs:'Al plegar se pierde parte del aire y la densidad sube. Ese aire ya no se recupera: después del batido no se forman burbujas nuevas. En SEP, al unir las espumas, los lípidos de la yema llegan a burbujas de clara y aparecen películas mixtas de proteína y lípido. Cuando coinciden, proteína y lípido compiten por la superficie de la burbuja, y la espuma queda menos estable que con cualquiera de los dos por separado.',
+    claims:[['f','Tras el batido no se forman burbujas nuevas; al plegar se pierden burbujas y aparecen películas mixtas.',G19+', fig. 2B'],
+      ['f','Si proteína y lípido coinciden en la interfase, la espuma es menos estable que con uno solo.',G19+', a partir de Wilde (2000)'],
+      ['i','La pérdida al plegar (14 % en AF, 20 % en SEP) es un parámetro del modelo. La proporción real de películas mixtas no está medida.','']]},
+  molde:{title:'Mismo volumen, distinta masa',
+    doit:'Llenar cada molde con 500 mL de batido y enrasar.',
+    obs:'Los dos moldes empiezan a la misma altura, pero no pesan lo mismo: el batido de SEP, más denso, pesa más. Para comparar los bizcochos al final no basta la altura; hace falta el volumen específico, que divide el volumen entre la masa. Antes del horno, el volumen específico del batido es la inversa de su densidad.',
+    claims:[['i','Condiciones del modelo: mismo volumen por molde y la misma fase líquida (agua y azúcar) en los dos bizcochos.',''],
+      ['i','Masa por molde = densidad del batido × 500 mL.','']]},
+  expansion:{title:'Expandir antes de fijar',
+    doit:'Hornear sin abrir la puerta. El centro del batido pasa de 24 a 80 °C.',
+    obs:'El aire de las burbujas se dilata y el agua se evapora dentro de ellas: el vapor aporta la mayor parte del aumento de volumen. A la vez, el batido se vuelve mucho más fluido; en el modelo, la viscosidad baja hasta cerca del 10 % de la inicial. Con el batido tan fluido, las burbujas pierden gas por drenaje, coalescencia y desproporción, y la pieza crece menos de lo que permitiría la dilatación del gas. La película de clara se estira sin romperse; las películas mixtas de SEP se rompen antes y pierden más gas. En SEP, la yema forma gel hacia 65 °C y frena algo la caída de viscosidad.',
+    claims:[['f','La mayor parte del aumento de volumen en el horno procede del vapor; la película debe estirarse sin romperse hasta que la pieza fije.',W13],
+      ['f','En batidos con grasa, la viscosidad cae hasta cerca del 10 % de la inicial al calentarse; si baja demasiado, aumentan la coalescencia, la desproporción y el ascenso de burbujas.',W13+'; '+G19],
+      ['i','En batidos de espuma esa caída no se ha medido. El modelo aplica la misma caída, hasta cerca del 10 %, a los dos bizcochos.',G19],
+      ['f','Las LDL de la yema forman gel hacia 65 °C.',W13],
+      ['i','En el modelo, ese gel frena en parte la caída de viscosidad de SEP. El dibujo de las formas de perder aire es esquemático.','']]},
+  fijacion:{title:'Fijar: de espuma líquida a espuma sólida',
+    doit:'Seguir horneando hasta que el centro supere los 94 °C.',
+    obs:'Con azúcar, el almidón gelatiniza y las proteínas coagulan entre 80 y 95 °C; la ovoalbúmina lo hace hacia 84 °C. Los gránulos hinchados hacen de ladrillos y la red de proteína, de mortero: el batido líquido pasa a espuma sólida y el volumen queda fijado. Las paredes de las celdas se abren y el vapor escapa. La fijación empieza en la base y termina en el centro. El volumen específico al fijar mide el aire que cada bizcocho retuvo hasta ese momento.',
+    claims:[['f','Almidón y proteína fijan entre 80 y 95 °C en sistemas con azúcar; los gránulos son los ladrillos y la red de proteína, el mortero.',G19+'; '+W13],
+      ['f','La ovoalbúmina se desnaturaliza hacia 84 °C y forma puentes S–S.',G19],
+      ['f','La base fija antes que el centro y la parte superior; al fijar, las celdas se abren y se comunican.',G19+'; '+W13],
+      ['i','En el modelo, los dos bizcochos tienen la misma agua y el mismo azúcar, y fijan entre 84 y 94 °C. Por eso la diferencia de volumen específico se debe solo a la interfase: AF retuvo más aire y su película no se rompió. En la realidad, la clara aporta algo más de agua (≈ 106 g en AF frente a ≈ 90 g en SEP); el azúcar queda más diluido y AF podría fijar algo antes.',G19+': la temperatura de fijación depende del agua y del azúcar'],
+      ['i','Que los bordes laterales fijen antes que el centro es una interpretación del dibujo: el calor entra también por las paredes del molde.','']]},
+  enfriado:{title:'Enfriar: la miga encoge y se afirma',
+    doit:'Sacar del horno y dejar enfriar antes de cortar.',
+    obs:'Fuera del horno, el gas de las celdas se contrae. Estos bizcochos llevan el mismo peso de azúcar que de harina (proporción baja), así que encogen un poco en lugar de hundirse. Al enfriarse, las cadenas de almidón gelatinizado empiezan a reasociarse en zonas más ordenadas (retrogradación) y la miga gana firmeza. En los días siguientes, la amilopectina sigue retrogradando y el agua migra hacia la corteza: el bizcocho se endurece. El corte muestra el resultado: SEP tiene menos altura y menos aire en la miga.',
+    claims:[['f','Al enfriar, los gases se contraen; los bizcochos de proporción baja encogen en lugar de hundirse.',W13+'; '+G19],
+      ['f','Al enfriarse, el almidón gelatinizado se reasocia en un estado más ordenado y contribuye a la firmeza inicial de la miga.',W13+', en bizcocho de mantequilla'],
+      ['i','Se transfiere a estos bizcochos de espuma; el modelo no lo cuantifica.',''],
+      ['f','Durante el almacenamiento, la amilopectina retrograda y el agua migra de la miga a la corteza: la miga se endurece.',G19],
+      ['i','La contracción es un parámetro del modelo, algo mayor en SEP por su película menos estable. El volumen específico no descuenta el agua evaporada.','']]},
+};
+const FICHA={
+  rho:{n:'Densidad',u:'g/mL',d:'Masa dividida entre volumen. Es el dato principal para saber cuánto aire ha entrado en el batido: cuanto más baja, más aire. Se mide llenando a ras un recipiente de volumen conocido y pesándolo.',e:['i','Valor teórico del modelo.']},
+  phi:{n:'Fracción de aire',u:'%',d:'Parte del volumen del batido que es aire.',e:['i','Valor teórico del modelo.']},
+  lost:{n:'Aire perdido al plegar',u:'%',d:'Parte del aire batido que se pierde al incorporar la harina y, en SEP, al unir las espumas.',e:['i','Parámetro del modelo, sin medida: 14 % en AF y 20 % en SEP.']},
+  mass:{n:'Masa por molde',u:'g',d:'Densidad del batido por 500 mL. Mismo volumen y distinta masa: SEP lleva más batido en el molde.',e:['i','Cálculo con la densidad teórica.']},
+  h0:{n:'Altura inicial',u:'',d:'Mismo volumen en el mismo molde: los dos bizcochos parten de la misma altura, h₀.',e:['i','Condición del modelo.']},
+  T:{n:'Temperatura del centro',u:'°C',d:'El centro es el último punto en calentarse. La banda del termómetro marca la fijación (84 → 94 °C).',e:null},
+  eta:{n:'Viscosidad relativa',u:'η/η₀',d:'Viscosidad respecto a la del batido al entrar al horno. Cae hasta cerca del 10 % al calentarse, sube algo en SEP cuando la yema forma gel (hacia 65 °C) y sube de golpe al fijar. Con el centro fijado, la pieza es sólida y la curva termina.',e:['i','Índice del modelo. La caída hasta ~10 % está medida en batidos con grasa; en batidos de espuma no se ha medido.']},
+  exp:{n:'Grado de expansión',u:'%',d:'Aumento de volumen de la pieza respecto al batido que entró al horno: (V/V₀ − 1) × 100. En el mismo molde equivale al aumento de altura.',e:['i','Valor teórico del modelo.']},
+  ret:{n:'Gas retenido',u:'%',d:'Parte del gas de las burbujas que sigue dentro de la pieza. Lo que falta se perdió por drenaje, coalescencia y desproporción mientras el batido estaba fluido.',e:['i','Índice del modelo.']},
+  fix:{n:'Fijación del centro',u:'%',d:'0 % a 84 °C y 100 % a 94 °C. Cuando la pieza fija, el volumen deja de crecer.',e:['i','Supuesto del modelo dentro del intervalo de 80 a 95 °C de las fuentes.']},
+  ve:{n:'Volumen específico',u:'cm³/g',d:'Volumen dividido entre masa. Antes del horno es el del batido (1 / densidad); al fijar indica el aire que retuvo la pieza. Permite comparar piezas de distinta masa.',e:['i','Valor teórico; no descuenta el agua evaporada en el horno.']},
+  shr:{n:'Contracción al enfriar',u:'%',d:'Pérdida de volumen al contraerse el gas fuera del horno.',e:['i','Parámetro del modelo.']},
+  airC:{n:'Aire en la miga',u:'%',d:'Parte del volumen de la pieza ocupada por celdas de gas al fijar.',e:['i','Valor teórico del modelo.']},
+};
+const CHIPS=[['rho','phi'],['rho','lost','phi'],['rho','mass','h0'],['T','eta','exp','ret'],['T','fix','exp','ret','ve'],['T','shr','ve','airC']];
+function chipValue(key,id,t){
+  const m=M[id], pre=preOven(id,Math.min(t,T_M));
+  switch(key){
+    case 'phi':return [fmt(pre.phi*100,0),'%'];
+    case 'rho':return [fmt(pre.rho,2),'g/mL'];
+    case 'lost':return [fmt(pre.lost*100,0),'%'];
+    case 'mass':return [fmt(m.mass,0),'g'];
+    case 'h0':return ['igual',''];
+    case 'T':return [fmt(Tt(id,t),0),'°C'];
+    case 'eta':{const e=etaT(id,t);return [e===null?'sólido':(e>3?'> 3':fmt(e,2)),e===null?'':'η/η₀']}
+    case 'exp':return [fmt(expT(id,t),0),'%'];
+    case 'ret':return [fmt(retT(id,t),0),'%'];
+    case 'fix':return [fmt(fixT(id,t),0),'%'];
+    case 've':return [fmt(veT(id,t),2),'cm³/g'];
+    case 'shr':return [fmt(shrT(id,t),1),'%'];
+    case 'airC':return [fmt(m.phiFin*100,0),'%'];
+  }
+  return ['',''];
+}
+const tempValue=Tt;
+
+/* =====================================================================
+   COLORES DE LOS ALIMENTOS Y DEL MATERIAL
+   ===================================================================== */
+const FOOD={
+  AF:{liq:hex('#E9ECE2'),foam0:hex('#F4F6EF'),foam1:hex('#FFFFFF'),batter:hex('#FBF8EE'),crumb:hex('#EEE1C0'),drain:hex('#D8D2BC')},
+  SEP:{liq:hex('#E9ECE2'),foam0:hex('#F4F6EF'),foam1:hex('#FFFFFF'),yliq:hex('#EDB33A'),yfoam0:hex('#F1C35A'),yfoam1:hex('#F8E3A0'),batter:hex('#F8EAC0'),crumb:hex('#EBC66E'),drain:hex('#D9BE78')},
+};
+const CRUST=hex('#B5732F'), FLOUR=hex('#E6D9BF'), METAL=hex('#A39C98'), METAL_D=hex('#5E5754'), METAL_L=hex('#E2DDD9'), BUBW=hex('#8B6E4E');
+let TK={};
+function readTokens(){const cs=getComputedStyle(document.documentElement),g=n=>cs.getPropertyValue(n).trim();
+  TK={panel:hex(g('--panel')),tint:hex(g('--tint')),line:hex(g('--line')),ink:hex(g('--ink')),muted:hex(g('--muted')),accent:hex(g('--accent')),af:hex(g('--c-af')),sep:hex(g('--c-sep'))}}
+readTokens();
+
+/* =====================================================================
+   BURBUJAS DEL MOLDE: posición, tamaño y destino (se pierde o no, y cómo)
+   ===================================================================== */
+const H0_REL=0.40;
+function rloc(xn,zAbs,h){const db=zAbs, ds=Math.min(xn,1-xn), dt=Math.max(0,h-zAbs);return 1+0.55*Math.exp(-Math.min(db,ds)/0.10)+0.22*Math.exp(-dt/0.07)}
+function genMold(m,seed){
+  const r=rng(seed), out=[], p=m.p, refW=220;
+  const avis=clamp(0.75*(m.phi-0.35)/0.45,0.18,0.66);
+  const area=refW*refW*H0_REL, meanA=Math.PI*p.rMed*p.rMed*Math.exp(2*p.sg*p.sg);
+  const N=Math.round(avis*area/meanA), grid=new Map(), cell=10, key=(a,b)=>a+','+b;
+  let tries=0;
+  while(out.length<N&&tries<N*40){
+    tries++;
+    const rr=p.rMed*Math.exp(p.sg*randn(r)), x=0.03+0.94*r(), z=0.04+0.92*r();
+    const X=x*refW, Y=z*refW*H0_REL, gx=Math.floor(X/cell), gy=Math.floor(Y/cell);
+    let ok=true;
+    for(let a=-2;a<=2&&ok;a++)for(let b=-2;b<=2&&ok;b++){const l=grid.get(key(gx+a,gy+b));if(l)for(const q of l){if(Math.hypot(q.X-X,q.Y-Y)<(q.rr+rr)*0.95){ok=false;break}}}
+    if(!ok)continue;
+    const o={x,z,r:rr/refW,X,Y,rr,th:Math.pow(r(),clamp(0.6+0.45*rr/p.rMed,0.7,1.7)),rl:rloc(x,z*H0_REL,H0_REL),
+      jit:[0,0,0,0,0,0,0].map(()=>0.72+0.45*r()),rot:r()*6.28,gap:r()*6.28,absorb:[]};
+    const g=grid.get(key(gx,gy));if(g)g.push(o);else grid.set(key(gx,gy),[o]);
+    out.push(o);
+  }
+  const NP=m.A.L.length-1;
+  for(const o of out){
+    let pl=Infinity;for(let i=0;i<=NP;i++){if(m.A.L[i]>=o.th){pl=m.PMAX*i/NP;break}}
+    o.uLoss=pl>m.pset?Infinity:pl/(m.p.k*o.rl);
+  }
+  // Destino de cada burbuja perdida: las pequeñas ceden gas (desproporción); las grandes se unen (coalescencia)
+  for(const o of out){
+    if(!isFinite(o.uLoss))continue;
+    o.fate=o.rr<p.rMed?'desp':'coal';
+    let best=null,bd=Infinity;
+    for(const q of out){if(q===o)continue;if(isFinite(q.uLoss)&&q.uLoss<=o.uLoss)continue;const d=Math.hypot(q.X-o.X,q.Y-o.Y);if(d<bd){bd=d;best=q}}
+    o.to=best;if(best)best.absorb.push(o);
+  }
+  return out;
+}
+function genBeaker(seed,n,big){const r=rng(seed),out=[];for(let i=0;i<n;i++)out.push({x:0.04+0.92*r(),y:r(),r:big*(0.65+0.7*r()),ord:r()});return out}
+const BUB={};
+IDS.forEach((id,i)=>{BUB[id]={mold:genMold(M[id],[11,23][i]),beak:genBeaker([16,28][i],160,id==='AF'?5.2:5.8),beakY:genBeaker(37,60,7.5),flour:genBeaker([24,36][i],46,1)}});
+const LOSS_WIN=0.06; // duración (en fracción del horno) de un evento de pérdida
+
+/* =====================================================================
+   DOM: carriles, etapas, gráficas
+   ===================================================================== */
+const LANE_INFO={
+  AF:{name:'AF · solo claras',kind:'Angel food',recipe:'120 g de clara · 60 g de azúcar · 60 g de harina',cvar:'--c-af',dash:false},
+  SEP:{name:'SEP · espumas separadas',kind:'Técnica de soletilla',recipe:'≈ 78 g de clara + 42 g de yema · 60 g de azúcar · 60 g de harina',cvar:'--c-sep',dash:true},
+};
+const lanesEl=document.getElementById('lanes'), UI={};
+let sepView='yema';
+IDS.forEach(id=>{
+  const L=LANE_INFO[id], el=document.createElement('article');el.className='lane';el.style.setProperty('--c',`var(${L.cvar})`);
+  el.innerHTML=`<header><div class="nm"><span class="sw${L.dash?' dash':''}"></span><h2>${L.name}</h2></div><p class="recipe">${L.kind} · ${L.recipe}</p></header>
+   <div class="cv"><canvas aria-hidden="true"></canvas><span class="st"></span></div>
+   <div class="lupa"><canvas aria-hidden="true"></canvas><div class="cap"><b>Lupa · superficie de una burbuja</b><span class="txt"></span>${id==='SEP'?'<span class="seg sepv" role="group" aria-label="Espuma que se ve en la lupa"><button type="button" data-v="clara" aria-pressed="false">Clara</button><button type="button" data-v="yema" aria-pressed="true">Yema</button></span>':''}</div></div>
+   <div class="chips" role="group" aria-label="Valores esperados, ${L.name}"></div>`;
+  lanesEl.appendChild(el);
+  UI[id]={el,cv:el.querySelector('.cv canvas'),st:el.querySelector('.st'),lupa:el.querySelector('.lupa canvas'),cap:el.querySelector('.cap .txt'),chips:el.querySelector('.chips'),sepv:el.querySelector('.sepv'),_st:'',_cap:'',_chipKey:''};
+});
+UI.SEP.sepv.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;sepView=b.dataset.v;UI.SEP.sepv.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));dirty=true});
+
+function fit(cv){const r=cv.getBoundingClientRect(),d=Math.min(2,window.devicePixelRatio||1);const w=Math.max(1,Math.round(r.width*d)),h=Math.max(1,Math.round(r.height*d));
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}const ctx=cv.getContext('2d');ctx.setTransform(d,0,0,d,0,0);return{ctx,W:r.width,H:r.height}}
+
+/* ---------- etapas ---------- */
+const stepsEl=document.getElementById('steps');
+ST.forEach((s,i)=>{const b=document.createElement('button');b.type='button';b.className='step';b.style.setProperty('--d',(s.t1-s.t0).toFixed(2));b.tabIndex=-1;
+  b.innerHTML=`<span class="bar"><i></i></span><span class="nm"><b>${i+1}</b><span class="txt">${s.n}</span><span class="sh">${s.n.slice(0,4)}.</span></span>`;stepsEl.appendChild(b)});
+const stepEls=[...stepsEl.children];
+function tFromX(cx){for(let i=0;i<stepEls.length;i++){const r=stepEls[i].querySelector('.bar').getBoundingClientRect();if(cx<=r.right+2||i===stepEls.length-1){const k=clamp((cx-r.left)/r.width,0,1);return ST[i].t0+k*(ST[i].t1-ST[i].t0)}}return 0}
+let dragging=false;
+stepsEl.addEventListener('pointerdown',e=>{dragging=true;try{stepsEl.setPointerCapture(e.pointerId)}catch(_){};setT(tFromX(e.clientX));pause()});
+stepsEl.addEventListener('pointermove',e=>{if(dragging)setT(tFromX(e.clientX))});
+stepsEl.addEventListener('pointerup',()=>{dragging=false});
+
+/* ---------- estado y controles ---------- */
+let t=0, playing=false, speed=1, last=null, dirty=true, selKey='phi', selId='AF';
+const setT=v=>{t=clamp(v,0,T_END);dirty=true};
+const playTxt=document.getElementById('playTxt'), playIcon=document.getElementById('playIcon');
+function syncPlay(){playTxt.textContent=playing?'Pausa':(t>=T_END?'Repetir':(t>0?'Continuar':'Reproducir'));playIcon.setAttribute('d',playing?'M3.5 2.5h3.2v11H3.5zM9.3 2.5h3.2v11H9.3z':'M4 2.5v11l9-5.5z')}
+function pause(){playing=false;syncPlay()}
+function togglePlay(){
+  if(t>=T_END)t=0;
+  // «Reducir movimiento» solo desactiva los movimientos decorativos; la reproducción siempre avanza
+  playing=!playing;last=null;syncPlay();dirty=true}
+function goStage(i){i=clamp(i,0,ST.length-1);setT(ST[i].t0+0.001);pause()}
+document.getElementById('play').addEventListener('click',togglePlay);
+document.getElementById('restart').addEventListener('click',()=>{setT(0);pause()});
+document.getElementById('prev').addEventListener('click',()=>{const i=stageOf(t);goStage(t-ST[i].t0>0.6?i:i-1)});
+document.getElementById('next').addEventListener('click',()=>goStage(stageOf(t)+1));
+document.querySelectorAll('[data-sp]').forEach(b=>b.addEventListener('click',()=>{speed=+b.dataset.sp;document.querySelectorAll('[data-sp]').forEach(x=>x.setAttribute('aria-pressed',x===b))}));
+document.getElementById('theme').addEventListener('click',()=>{const root=document.documentElement;const dark=getComputedStyle(root).getPropertyValue('--paper').trim().toLowerCase()==='#161112';root.setAttribute('data-theme',dark?'light':'dark');onTheme()});
+function onTheme(){readTokens();buildCharts(true);dirty=true}
+if(window.matchMedia){const mq=window.matchMedia('(prefers-color-scheme: dark)');if(mq.addEventListener)mq.addEventListener('change',onTheme)}
+document.addEventListener('keydown',e=>{
+  if(e.target.closest&&e.target.closest('input,textarea'))return;
+  const k=e.key;
+  if(k===' '&&!(e.target.closest&&e.target.closest('button'))){togglePlay();e.preventDefault();return}
+  if(k==='ArrowRight'){setT(t+(e.shiftKey?5:1));pause()}else if(k==='ArrowLeft'){setT(t-(e.shiftKey?5:1));pause()}
+  else if(k==='Home'){setT(0);pause()}else if(k==='End'){setT(T_END);pause()}
+  else if(/^[1-6]$/.test(k)){goStage(+k-1)}else return;
+  e.preventDefault();
+});
+
+/* ---------- lectura de la etapa ---------- */
+const narrEl=document.getElementById('narr');let narrKey='';
+function renderNarr(){
+  const i=stageOf(t), k=ST[i].k;if(k===narrKey)return;narrKey=k;const n=NARR[k];
+  const when=`Etapa ${i+1} de 6`+(i===3||i===4?' · horno':'');
+  narrEl.innerHTML=`<div class="stage-h"><h2>${n.title}</h2><span class="when">${when}</span></div>
+   <div class="narr"><p class="doit"><b>Procedimiento</b>${n.doit}</p><p class="obs">${n.obs}</p>
+   <ul class="claims">${n.claims.map(c=>`<li><em class="tag ${TAGS[c[0]][1]}">${TAGS[c[0]][0]}</em><span>${c[1]}${c[2]?` <span class="src">· ${c[2]}</span>`:''}</span></li>`).join('')}</ul></div>`;
+}
+/* ---------- tiempo de proceso ---------- */
+const procWhat=document.getElementById('procWhat'), procClock=document.getElementById('procClock');
+const mmss=m=>{const s=Math.round(m*60);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')};
+function renderProc(){
+  const i=stageOf(t);let what,clk;
+  if(i===0){const mins=P.PROC.batidoMin*clamp(t/T_B,0,1);what='Tiempo de batido';clk=`${mmss(mins)} de ${mmss(P.PROC.batidoMin)} · velocidad ${mins<P.PROC.cambioVelMin?'media (4 a 6)':'alta (8 a 9)'}`}
+  else if(i===1){what='Tiempo de plegado';clk=`${mmss(P.PROC.plegadoMin*clamp((t-T_B)/D.plegado,0,1))} de ${mmss(P.PROC.plegadoMin)}`}
+  else if(i===2){what='Llenado del molde';clk=`${P.MOLD_ML} mL por molde`}
+  else if(i<5){what='Tiempo de horno';clk=`${fmt(ovenU(t)*100,0)} % del tiempo total`}
+  else{what='Enfriado';clk=t>=T_END-D.corte?'corte de la pieza':`${fmt(Tt('AF',t),0)} °C en el centro`}
+  procWhat.textContent=what+':';procClock.textContent=clk;
+}
+/* ---------- valores (etiquetas interactivas) ---------- */
+const fichaEl=document.getElementById('ficha');
+function renderChips(){
+  const i=stageOf(t), keys=CHIPS[i];
+  if(!keys.includes(selKey))selKey=keys[0];
+  IDS.forEach(id=>{
+    const U=UI[id], sig=i+'|'+selKey+'|'+selId;
+    if(U._chipKey!==sig){U._chipKey=sig;U.chips.style.setProperty('--cols',keys.length===4?2:Math.min(3,keys.length));
+      U.chips.innerHTML=keys.map(k=>`<button type="button" class="chip" data-k="${k}" data-id="${id}" aria-pressed="${k===selKey}"><span class="k">${FICHA[k].n}</span><span class="v"></span><span class="t">modelo</span></button>`).join('')}
+    U.chips.querySelectorAll('.chip').forEach(c=>{const [v,u]=chipValue(c.dataset.k,id,t);const h=`${v}<small>${u}</small>`;const vEl=c.querySelector('.v');if(vEl._h!==h){vEl.innerHTML=h;vEl._h=h}});
+  });
+  renderFicha();
+}
+lanesEl.addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;selKey=c.dataset.k;selId=c.dataset.id;IDS.forEach(id=>UI[id]._chipKey='');dirty=true});
+let fichaSig='';
+function renderFicha(){
+  const f=FICHA[selKey], a=chipValue(selKey,'AF',t), s=chipValue(selKey,'SEP',t);
+  const sigF=selKey+a.join()+s.join();if(sigF===fichaSig)return;fichaSig=sigF;
+  fichaEl.innerHTML=`<div class="h"><h3>${f.n}</h3><span class="mono" style="font-size:12.5px;color:var(--muted)">AF ${a[0]} ${a[1]} · SEP ${s[0]} ${s[1]}</span></div><p>${f.d}</p>${f.e?`<p style="display:flex;gap:8px;align-items:baseline"><em class="tag ${TAGS[f.e[0]][1]}">${TAGS[f.e[0]][0]}</em><span style="color:var(--muted);font-size:12.5px">${f.e[1]}</span></p>`:''}`;
+}
+/* ---------- estado en el lienzo ---------- */
+function stateText(id){const i=stageOf(t),m=M[id],u=ovenU(t);
+  if(i===0)return id==='SEP'?'Dos espumas':'Montando la clara';
+  if(i===1)return id==='SEP'&&t<T_B+D.plegado*0.25?'Uniendo las espumas':'Plegando la harina';
+  if(i===2)return 'Batido '+fmt(m.rho,2)+' g/mL';
+  if(i===3)return 'Expandiendo · '+fmt(m.Tc(u),0)+' °C';
+  if(i===4)return (m.Sc(u)>=0.99?'Fijado':'Fijando')+' · '+fmt(m.Tc(u),0)+' °C';
+  return t>=T_END-D.corte?'Corte final':'Enfriando · '+fmt(Tt(id,t),0)+' °C'}
+
+/* =====================================================================
+   DIBUJO: vaso, varillas, espátula, molde, termómetro
+   ===================================================================== */
+function drawBeaker(ctx,x,yF,bw,bh,alpha){
+  ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=rgb(TK.muted,0.85);ctx.lineWidth=1.8;
+  ctx.beginPath();ctx.moveTo(x-3,yF-bh);ctx.lineTo(x-3,yF-6);ctx.quadraticCurveTo(x-3,yF+3,x+6,yF+3);ctx.lineTo(x+bw-6,yF+3);ctx.quadraticCurveTo(x+bw+3,yF+3,x+bw+3,yF-6);ctx.lineTo(x+bw+3,yF-bh);ctx.stroke();
+  ctx.strokeStyle=rgb(TK.muted,0.25);ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x+3,yF-bh+6);ctx.lineTo(x+3,yF-12);ctx.stroke();
+  ctx.restore();
+}
+function foamFill(ctx,x,yTop,bw,yLiq,col){ctx.fillStyle=rgb(col);ctx.beginPath();ctx.moveTo(x,yLiq);ctx.lineTo(x,yTop+4);for(let i=0;i<=8;i++)ctx.lineTo(x+bw*i/8,yTop+Math.sin(i*1.7)*2.2);ctx.lineTo(x+bw,yLiq);ctx.closePath();ctx.fill()}
+function drawFoamBubbles(ctx,list,x,yTop,bw,yLiq,scale,vis,popQ){
+  const h=yLiq-yTop;if(h<2)return;ctx.save();ctx.beginPath();ctx.rect(x,yTop+1,bw,h);ctx.clip();
+  ctx.lineWidth=0.8;ctx.strokeStyle=rgb(BUBW,0.5);
+  for(const b of list){if(b.ord>vis)continue;let a=1;if(popQ!==undefined&&b.ord<popQ){a=clamp(1-(popQ-b.ord)*10,0,1);if(a<=0)continue}
+    const r=Math.max(0.9,b.r*scale),X=x+b.x*bw,Y=yTop+b.y*h;ctx.globalAlpha=a;ctx.fillStyle='rgba(255,255,255,0.55)';ctx.beginPath();ctx.arc(X,Y,r,0,6.2832);ctx.fill();ctx.stroke();
+    if(r>2.5){ctx.fillStyle='rgba(255,255,255,0.9)';ctx.beginPath();ctx.arc(X-r*0.35,Y-r*0.35,r*0.22,0,6.2832);ctx.fill()}}
+  ctx.restore();
+}
+function drawWhisk(ctx,cx,yTip,len,width,ang){
+  ctx.save();ctx.lineCap='round';ctx.strokeStyle=rgb(METAL_D);ctx.lineWidth=Math.max(2,width*0.16);
+  ctx.beginPath();ctx.moveTo(cx,yTip-len*1.05);ctx.lineTo(cx,yTip-len*0.62);ctx.stroke();ctx.lineWidth=1.1;
+  for(let k=0;k<4;k++){const rx=Math.abs(Math.cos(ang+k*Math.PI/4))*width*0.5+0.6;ctx.strokeStyle=rgb(mix(METAL,METAL_D,k%2?0.2:0.55),0.9);ctx.beginPath();ctx.ellipse(cx,yTip-len*0.31,rx,len*0.31,0,0,6.2832);ctx.stroke()}
+  ctx.restore();
+}
+function drawSpatula(ctx,px,py,len,ang){
+  ctx.save();ctx.translate(px,py);ctx.rotate(ang);ctx.lineCap='round';ctx.strokeStyle=rgb(hex('#7A5A3A'));ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,len*0.55);ctx.stroke();
+  ctx.fillStyle=rgb(hex('#C7C1BD'),0.95);ctx.strokeStyle=rgb(METAL_D,0.7);ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(0,len*0.78,len*0.11,len*0.24,0,0,6.2832);ctx.fill();ctx.stroke();ctx.restore();
+}
+function drawThermo(ctx,x,yTop,yBot,T,W){
+  const w=Math.max(5,W*0.026),tr=v=>yBot-(clamp(v,15,100)-15)/85*(yBot-yTop);
+  ctx.save();ctx.fillStyle=rgb(TK.panel);ctx.strokeStyle=rgb(TK.muted,0.7);ctx.lineWidth=1;
+  ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x-w/2,yTop,w,yBot-yTop,w/2);else ctx.rect(x-w/2,yTop,w,yBot-yTop);ctx.fill();ctx.stroke();
+  ctx.fillStyle=rgb(TK.accent,0.2);ctx.fillRect(x-w/2+1,tr(P.FIX_END),w-2,tr(P.FIX_START)-tr(P.FIX_END));
+  ctx.fillStyle=rgb(TK.accent);ctx.fillRect(x-w/2+1.5,tr(T),w-3,yBot-tr(T));ctx.beginPath();ctx.arc(x,yBot+w*0.55,w*0.95,0,6.2832);ctx.fill();
+  if(W>190){ctx.font=`500 9px ${MONO}`;ctx.fillStyle=rgb(TK.muted);ctx.textAlign='right';ctx.fillText(P.FIX_END,x-w/2-3,tr(P.FIX_END)+3);ctx.fillText(P.FIX_START,x-w/2-3,tr(P.FIX_START)+3);ctx.fillText('25',x-w/2-3,tr(25)+3)}
+  ctx.restore();
+}
+let OFF=null;
+function drawScene(ctx,W,H,id){
+  const m=M[id],B=BUB[id],F=FOOD[id],u=ovenU(t),cut=cutP(t),scale=W/280;
+  ctx.globalAlpha=1;ctx.setLineDash([]);ctx.clearRect(0,0,W,H);ctx.fillStyle=rgb(TK.tint);ctx.fillRect(0,0,W,H);
+  const yF=H*0.9;
+  /* horno: resplandor y resistencias */
+  const ovenI=t>=T_M?smooth((t-T_M)/1)*(1-smooth((t-T_O)/1.2)):0;
+  if(ovenI>0){
+    let g=ctx.createLinearGradient(0,H,0,H*0.45);g.addColorStop(0,`rgba(232,96,40,${0.24*ovenI})`);g.addColorStop(1,'rgba(232,96,40,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    g=ctx.createLinearGradient(0,0,0,H*0.3);g.addColorStop(0,`rgba(232,96,40,${0.14*ovenI})`);g.addColorStop(1,'rgba(232,96,40,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle=`rgba(214,72,30,${0.75*ovenI})`;ctx.lineWidth=2.2;ctx.lineCap='round';
+    [H-3.5,3.5].forEach(y=>{ctx.beginPath();for(let x=W*0.05;x<=W*0.95;x+=2){const yy=y+Math.sin(x/W*Math.PI*10)*1.4;x===W*0.05?ctx.moveTo(x,yy):ctx.lineTo(x,yy)}ctx.stroke()});
+  }
+  /* vasos: batido y plegado */
+  const beakA=t<T_P?1:1-smooth((t-T_P)/1.0);
+  if(beakA>0){
+    const BH=H*0.8,Al=(0.12*H)*(0.5*W),pre=preOven(id,Math.min(t,T_P));
+    const fast=pre.w>=P.PROC.cambioVelMin/P.PROC.batidoMin, ang=reduceMotion?0.6:t*(fast?16:9);
+    if(t<T_B&&id==='SEP'){
+      const w=pre.w,bw=W*0.30,gap=W*0.07,x1=W*0.08,x2=x1+bw+gap;
+      const parts=[{x:x1,frac:P.SEP_FRAC_CLARA,air:P.SEP_FRAC_CLARA*airClara(w),liq:F.liq,f0:F.foam0,f1:F.foam1,list:B.beak,big:1,lab:'clara'},
+                   {x:x2,frac:P.SEP_FRAC_YEMA,air:P.SEP_FRAC_YEMA*airYema(w),liq:F.yliq,f0:F.yfoam0,f1:F.yfoam1,list:B.beakY,big:1.2,lab:'yema'}];
+      for(const q of parts){
+        const liqH=q.frac*(1-0.75*smooth(w/0.8))*Al/bw, totH=(q.frac+q.air)*Al/bw, yLiq=yF-liqH, yTop=yF-totH;
+        ctx.globalAlpha=beakA;ctx.fillStyle=rgb(q.liq);ctx.fillRect(q.x,yLiq,bw,liqH);
+        foamFill(ctx,q.x,yTop,bw,yLiq,mix(q.f0,q.f1,smooth(w*1.3)));
+        drawFoamBubbles(ctx,q.list,q.x,yTop,bw,yLiq,scale*(1.55-0.85*w)*q.big,0.25+0.75*smooth(w*2.5));
+        drawBeaker(ctx,q.x,yF,bw,BH,beakA);
+        if(t<T_B-0.2)drawWhisk(ctx,q.x+bw/2,Math.min(yF-6,yTop+(yF-yTop)*0.75),BH*0.62,bw*0.62,ang+(q.lab==='yema'?1:0));
+        ctx.globalAlpha=beakA;ctx.font=`500 ${Math.max(9,10*scale)}px ${MONO}`;ctx.fillStyle=rgb(TK.muted);ctx.textAlign='center';ctx.fillText(q.lab,q.x+bw/2,yF-BH+16);
+      }
+      ctx.globalAlpha=1;
+    }else{
+      const bw=W*0.5,x=W*0.09+(W*0.7-bw)/2;
+      let foamCol,liqCol=F.liq,vis=1,popQ,liqFrac=0.25;
+      if(t<T_B){foamCol=mix(F.foam0,F.foam1,smooth(pre.w*1.3));vis=0.25+0.75*smooth(pre.w*2.5);liqFrac=1-0.75*smooth(pre.w/0.8)}
+      else{foamCol=mix(id==='AF'?F.foam1:mix(F.foam1,F.yfoam1,0.55),FLOUR,0.18*pre.fl);if(id==='SEP')liqCol=mix(F.liq,F.yliq,0.5);popQ=pre.lost*2.2}
+      const liqH=liqFrac*Al/bw, totH=(1+pre.air+P.LIQ_FLOUR*pre.fl)*Al/bw, yLiq=yF-liqH, yTop=yF-totH;
+      ctx.save();ctx.globalAlpha=beakA;ctx.fillStyle=rgb(liqCol);ctx.fillRect(x,yLiq,bw,liqH);
+      foamFill(ctx,x,yTop,bw,yLiq,foamCol);
+      drawFoamBubbles(ctx,B.beak,x,yTop,bw,yLiq,scale*(1.55-0.85*Math.min(1,pre.w))*(id==='AF'?1:1.12),vis,popQ);
+      if(t>=T_B&&t<T_P){
+        const q=pre.q;ctx.fillStyle=rgb(FLOUR);ctx.strokeStyle=rgb(hex('#A08A62'),0.6);ctx.lineWidth=0.6;
+        for(const f of B.flour){const st=0.04+f.ord*0.42,k=(q-st)/0.16;if(k<0||k>1)continue;ctx.globalAlpha=beakA*(1-smooth((k-0.7)/0.3));ctx.beginPath();ctx.arc(x+f.x*bw,lerp(yTop-H*0.28,yTop+18*scale,k),1.6*scale+0.5,0,6.283);ctx.fill();ctx.stroke()}
+        ctx.globalAlpha=beakA;if(q>0.06&&q<0.97)drawSpatula(ctx,x+bw*0.5,yTop-H*0.16,(yF-yTop)*0.9+H*0.16,reduceMotion?0.3:Math.sin(t*3)*0.55);
+      }
+      ctx.restore();
+      if(t<T_B-0.2)drawWhisk(ctx,x+bw/2,Math.min(yF-6,yTop+(yF-yTop)*0.72),BH*0.62,bw*0.5,ang);
+      drawBeaker(ctx,x,yF,bw,BH,beakA);
+      if(t>=T_B&&t<T_B+D.plegado*0.6){ctx.globalAlpha=beakA*(1-smooth((t-T_B-D.plegado*0.45)/1.2));ctx.font=`500 ${Math.max(9,10*scale)}px ${MONO}`;ctx.fillStyle=rgb(TK.muted);ctx.textAlign='center';
+        ctx.fillText(id==='SEP'&&t<T_B+D.plegado*0.2?'unión de espumas':'+ harina',x+bw/2,yF-BH+16);ctx.globalAlpha=1}
+    }
+  }
+  /* molde */
+  if(t>=T_P+0.3)drawMold(ctx,W,H,id,yF,u,cut,scale);
+  if(t>=T_P+0.3){const tx=W*0.93;drawThermo(ctx,tx,yF-H*0.62,yF-6,tempValue(id,t),W)}
+}
+function drawMold(ctx,W,H,id,yF,u,cut,scale){
+  const m=M[id],B=BUB[id],F=FOOD[id];
+  const moldA=smooth((t-T_P-0.3)/0.8);
+  const mx=W*0.09,mw=W*0.72,wallH=H*0.66,h0=wallH*0.42;
+  const fill=smooth((t-T_P-0.8)/2.2), inOven=t>=T_M;
+  const E=Vt(id,t), post=t>=T_O, shrinkNow=post?m.shrink*smooth(coolC(t)):0;
+  const dome=inOven?0.05*smooth((u-m.uSetC+0.2)/0.25):0;
+  const hBase=h0*E*fill, hx=xn=>hBase*(1+dome*(1-Math.pow(2*xn-1,2)));
+  ctx.save();ctx.globalAlpha=moldA;
+  // sombra y fondo del molde
+  ctx.fillStyle='rgba(0,0,0,0.08)';ctx.beginPath();ctx.ellipse(mx+mw/2,yF+6,mw*0.56,4.5,0,0,6.2832);ctx.fill();
+  let g=ctx.createLinearGradient(mx,0,mx+mw,0);g.addColorStop(0,rgb(mix(TK.tint,METAL,0.25)));g.addColorStop(0.5,rgb(mix(TK.tint,METAL_L,0.35)));g.addColorStop(1,rgb(mix(TK.tint,METAL,0.25)));
+  ctx.fillStyle=g;ctx.fillRect(mx,yF-wallH,mw,wallH);
+  // contorno del batido o de la pieza
+  const NS=28,path=new Path2D();path.moveTo(mx,yF);for(let i=0;i<=NS;i++){const xn=i/NS;path.lineTo(mx+xn*mw,yF-hx(xn))}path.lineTo(mx+mw,yF);path.closePath();
+  ctx.save();ctx.clip(path);
+  const topY=yF-wallH*1.05;
+  if(!inOven){g=ctx.createLinearGradient(0,yF-hBase,0,yF);g.addColorStop(0,rgb(mix(F.batter,[255,255,255],0.35)));g.addColorStop(1,rgb(F.batter));ctx.fillStyle=g;ctx.fillRect(mx,topY,mw,yF-topY)}
+  else{
+    // color local según el avance de la fijación (la base y los bordes antes que el centro)
+    const gw=40,gh=36;if(!OFF){OFF=document.createElement('canvas');OFF.width=gw;OFF.height=gh}
+    const oc=OFF.getContext('2d'),img=oc.createImageData(gw,gh),hRel=hBase/mw;
+    for(let j=0;j<gh;j++)for(let i=0;i<gw;i++){const xn=(i+0.5)/gw,yy=topY+(j+0.5)/gh*(yF-topY),zAbs=(yF-yy)/mw;
+      const S=post?1:m.at(m.A.S,m.p.k*u*rloc(xn,zAbs,hRel));const c=mix(F.batter,F.crumb,S),k=(j*gw+i)*4;img.data[k]=c[0];img.data[k+1]=c[1];img.data[k+2]=c[2];img.data[k+3]=255}
+    oc.putImageData(img,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(OFF,mx,topY,mw,yF-topY);
+    // drenaje: capa de líquido más denso en la base mientras la pieza no ha fijado (esquema)
+    const lv=m.at(m.A.LV,m.ppH(u)),Sb=m.at(m.A.S,m.p.k*u*1.55);
+    const band=h0*0.5*lv*(1-cut);
+    if(band>0.4){g=ctx.createLinearGradient(0,yF-band*1.6,0,yF);g.addColorStop(0,rgb(F.drain,0));g.addColorStop(0.45,rgb(F.drain,0.55*(1-0.6*Sb)));g.addColorStop(1,rgb(F.drain,0.85*(1-0.6*Sb)));ctx.fillStyle=g;ctx.fillRect(mx,yF-band*1.6,mw,band*1.6)}
+  }
+  // burbujas o celdas
+  for(const b of B.mold){
+    const X0=mx+b.x*mw,hh=hx(b.x);let X=X0,Y=yF-b.z*hh,r=b.r*mw,a=1,ev=0;
+    if(!inOven&&fill<1&&b.z>fill)continue;
+    if(inOven){
+      if(u>=b.uLoss){const d=(u-b.uLoss)/LOSS_WIN;if(d>=1||post)continue;ev=1-Math.abs(d*2-1);
+        if(b.fate==='desp'){r*=Math.cbrt(Math.max(0,1-d))}
+        else if(b.to){const tX=mx+b.to.x*mw,tY=yF-b.to.z*hx(b.to.x);X=lerp(X,tX,d*0.85);Y=lerp(Y,tY,d*0.85);a=1-d}
+        else{Y-=d*hh*0.6;a=1-d}}
+      const pp=Math.min(m.p.k*u*b.rl,m.pset),G=m.at(m.A.G,pp);let vol=Math.pow(b.r,3)*G;
+      for(const o of b.absorb){if(u>o.uLoss){const d=clamp((u-o.uLoss)/LOSS_WIN,0,1);vol+=Math.pow(o.r,3)*G*d}}
+      r=Math.cbrt(vol*(1-shrinkNow))*mw*(b.fate==='desp'&&u>=b.uLoss?Math.cbrt(Math.max(0,1-(u-b.uLoss)/LOSS_WIN)):1);
+    }
+    r=Math.max(0.8,r);
+    const S=inOven?(post?1:m.at(m.A.S,Math.min(m.p.k*u*b.rl,1.9))):0;
+    if(cut<1){
+      ctx.globalAlpha=moldA*a*(1-cut);ctx.beginPath();ctx.arc(X,Y,r,0,6.2832);ctx.fillStyle=`rgba(255,255,255,${0.62-0.3*S})`;ctx.fill();
+      ctx.lineWidth=0.8;ctx.strokeStyle=rgb(mix(BUBW,hex('#6E4A26'),S),0.55+0.3*S);
+      if(S>0.8){ctx.beginPath();ctx.arc(X,Y,r,b.gap,b.gap+5.3);ctx.stroke()}else ctx.stroke();
+      if(r>2.6&&S<0.8){ctx.fillStyle='rgba(255,255,255,0.85)';ctx.beginPath();ctx.arc(X-r*0.35,Y-r*0.35,r*0.2,0,6.2832);ctx.fill()}
+      if(ev>0.05&&!reduceMotion){ctx.globalAlpha=moldA*ev*0.9;ctx.strokeStyle=rgb(TK.accent);ctx.lineWidth=1.1;ctx.setLineDash([2,2]);ctx.beginPath();ctx.arc(X,Y,r+2.5,0,6.2832);ctx.stroke();ctx.setLineDash([])}
+    }
+    if(cut>0){ctx.globalAlpha=moldA*cut;const rr=r*1.05;ctx.beginPath();
+      for(let k=0;k<7;k++){const an=b.rot+k*0.8976,R=rr*b.jit[k],px=X+Math.cos(an)*R,py=Y+Math.sin(an)*R;k?ctx.lineTo(px,py):ctx.moveTo(px,py)}
+      ctx.closePath();ctx.fillStyle=rgb(mix(F.crumb,hex('#6B4E2C'),0.22));ctx.fill();ctx.lineWidth=0.9;ctx.strokeStyle=rgb(mix(F.crumb,hex('#5A3E1E'),0.4),0.8);ctx.stroke()}
+  }
+  ctx.restore();
+  // corteza
+  ctx.globalAlpha=moldA;
+  if(inOven){const cr=post?1:smooth((u-0.5)/0.45);if(cr>0){ctx.lineWidth=1+2.6*cr*Math.max(0.7,scale);ctx.strokeStyle=rgb(mix(F.crumb,CRUST,0.35+0.6*cr));ctx.beginPath();for(let i=0;i<=NS;i++){const xn=i/NS;i?ctx.lineTo(mx+xn*mw,yF-hx(xn)):ctx.moveTo(mx,yF-hx(0))}ctx.stroke()}}
+  // vapor al abrirse las celdas
+  if(inOven&&!reduceMotion){const si=t<T_O?smooth((m.Sc(u)-0.25)/0.4):1-smooth((t-T_O)/3);
+    if(si>0.01){ctx.strokeStyle=rgb(TK.muted,0.45*si);ctx.lineWidth=1.4;ctx.lineCap='round';const yTop=yF-hBase*(1+dome),ph=performance.now()/650;
+      [0.3,0.52,0.72].forEach((fx,k)=>{ctx.beginPath();for(let s=0;s<=14;s++){const yy=yTop-6-s*H*0.012,xx=mx+fx*mw+Math.sin(s*0.7+ph+k*2)*4*scale;s?ctx.lineTo(xx,yy):ctx.moveTo(xx,yy)}ctx.stroke()})}}
+  // vertido
+  if(t>=T_P+0.8&&t<T_P+3.0){const k=(t-T_P-0.8)/2.2;ctx.fillStyle=rgb(F.batter);ctx.globalAlpha=moldA*(1-smooth((k-0.8)/0.2));ctx.fillRect(mx+mw/2-3*scale,yF-wallH*1.1,6*scale,wallH*1.1-hBase)}
+  // paredes metálicas con borde
+  ctx.globalAlpha=moldA;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.strokeStyle=rgb(METAL_D);ctx.lineWidth=3.4;ctx.beginPath();ctx.moveTo(mx-7,yF-wallH);ctx.lineTo(mx-1.7,yF-wallH);ctx.lineTo(mx-1.7,yF+1.7);ctx.lineTo(mx+mw+1.7,yF+1.7);ctx.lineTo(mx+mw+1.7,yF-wallH);ctx.lineTo(mx+mw+7,yF-wallH);ctx.stroke();
+  ctx.strokeStyle=rgb(METAL_L,0.85);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(mx-0.3,yF-wallH+3);ctx.lineTo(mx-0.3,yF-0.5);ctx.lineTo(mx+mw+0.3,yF-0.5);ctx.lineTo(mx+mw+0.3,yF-wallH+3);ctx.stroke();
+  // escala de alturas
+  if(t>=T_P+2){ctx.strokeStyle=rgb(TK.ink,0.55);ctx.fillStyle=rgb(TK.ink,0.75);ctx.lineWidth=1;ctx.font=`500 ${Math.max(8.5,9*scale)}px ${MONO}`;ctx.textAlign='right';
+    [[1,'h₀'],[1.5,'1,5'],[2,'2h₀']].forEach(([f,l])=>{const y=yF-h0*f;ctx.beginPath();ctx.moveTo(mx-10,y);ctx.lineTo(mx-5,y);ctx.stroke();if(W>190)ctx.fillText(l,mx-12,y+3)});
+    ctx.setLineDash([3,3]);ctx.strokeStyle=rgb(TK.ink,t<T_M+2?0.5:0.22);ctx.beginPath();ctx.moveTo(mx,yF-h0);ctx.lineTo(mx+mw,yF-h0);ctx.stroke();ctx.setLineDash([])}
+  if(cut>0.5){ctx.globalAlpha=moldA*smooth((cut-0.5)/0.4);ctx.font=`600 ${Math.max(10,11*scale)}px ${MONO}`;ctx.fillStyle=rgb(TK.ink,0.8);ctx.textAlign='center';ctx.fillText('CORTE',mx+mw/2,yF-wallH-4)}
+  ctx.restore();
+}
+
+/* =====================================================================
+   LUPA: interfase aire–agua de una burbuja
+   ===================================================================== */
+const LC={hyd:hex('#E39B3A'),phil:hex('#4F86C6'),sul:hex('#E2C12B'),head:hex('#8E63B8'),tail:hex('#A39B95'),starch:hex('#EAD7A6'),ring:hex('#BFA068'),water:hex('#6FA3D2'),gas:hex('#AEB8C2'),bond:hex('#857B76'),den:hex('#9B2F24'),ldl:hex('#E7B54A')};
+const WHITE=[255,255,255],BLACK=[0,0,0];
+function bead(ctx,x,y,r,col,a){if(a===undefined)a=1;const g=ctx.createRadialGradient(x-r*0.4,y-r*0.4,r*0.1,x,y,r);g.addColorStop(0,rgb(mix(col,WHITE,0.65),a));g.addColorStop(0.65,rgb(col,a));g.addColorStop(1,rgb(mix(col,BLACK,0.3),a));ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,6.2832);ctx.fill()}
+function bond(ctx,x1,y1,x2,y2,w,col,a){ctx.strokeStyle=rgb(col,a===undefined?0.9:a);ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()}
+const ORDER8={AF:[2,5,0,7,3,6,1,4],SEP:[1,6,3,0,7,4,2,5]};
+const LPTS={};
+function lupaPts(id){if(LPTS[id])return LPTS[id];const r=rng(31+id.length*7);const w=[],g=[];for(let i=0;i<54;i++)w.push([r(),r()]);for(let i=0;i<6;i++)g.push([r(),r(),r()*6.28]);return LPTS[id]={w,g}}
+function lupaMode(id){if(id==='AF')return 'clara';if(t<T_B)return sepView;return 'mixta'}
+function protFrac(id){const mode=lupaMode(id);if(mode==='clara')return 1;if(mode==='yema')return 0.25;const q=clamp((t-T_B)/D.plegado,0,1);return lerp(1,0.62,smooth(q/0.3))}
+function drawLupa(id){
+  const m=M[id],{ctx,W,H}=fit(UI[id].lupa),R=Math.min(W,H)/2-1.5,cx=W/2,cy=H/2;
+  ctx.globalAlpha=1;ctx.setLineDash([]);ctx.lineCap='round';ctx.clearRect(0,0,W,H);ctx.save();ctx.beginPath();ctx.arc(cx,cy,R,0,6.2832);ctx.clip();
+  const u=ovenU(t),inOven=t>=T_M,mode=lupaMode(id);
+  const pc=inOven?m.ppH(u):0,Gc=inOven?m.at(m.A.G,pc):1,Sc=inOven?(t>=T_O?1:m.Sc(u)):0,retro=t>=T_O?smooth(coolC(t)):0;
+  const ex=clamp((Gc-1)/1.2,0,1),net=smooth((Sc-0.25)/0.6);
+  const yolky=mode!=='clara', yI=cy-R*0.12, sag=R*0.12, curve=x=>yI+(1-Math.pow((x-cx)/R,2))*sag;
+  let g=ctx.createLinearGradient(0,cy-R,0,yI+sag);g.addColorStop(0,'#F8FAFC');g.addColorStop(1,'#EEF2F6');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  const wc=yolky?hex('#EFE5C8'):hex('#DCE9F4');g=ctx.createLinearGradient(0,yI,0,cy+R);g.addColorStop(0,rgb(mix(wc,WHITE,0.25)));g.addColorStop(1,rgb(wc));ctx.fillStyle=g;
+  ctx.beginPath();ctx.moveTo(cx-R,curve(cx-R));for(let x=cx-R;x<=cx+R;x+=2)ctx.lineTo(x,curve(x));ctx.lineTo(cx+R,cy+R);ctx.lineTo(cx-R,cy+R);ctx.closePath();ctx.fill();
+  const Pp=lupaPts(id),tm=reduceMotion?0:performance.now()/1000,br=Math.max(1.5,R*0.05);
+  Pp.g.forEach(([a,b,an0],i)=>{const x=cx+(a-0.5)*R*1.5+Math.sin(tm*0.7+i)*R*0.03,y=cy-R*0.6+b*R*0.3,d=br*0.75,an=an0+tm*0.4;bead(ctx,x-Math.cos(an)*d,y-Math.sin(an)*d,br*0.85,LC.gas);bead(ctx,x+Math.cos(an)*d,y+Math.sin(an)*d,br*0.85,LC.gas)});
+  Pp.w.forEach(([a,b],i)=>{const x=cx+(a-0.5)*R*1.95,y0=curve(x)+R*0.16,y=y0+b*(cy+R-y0);if(Math.hypot(x-cx,y-cy)>R-1)return;ctx.fillStyle=rgb(LC.water,0.45);ctx.beginPath();ctx.arc(x+Math.sin(tm*1.2+i)*0.6,y,Math.max(1,R*0.022),0,6.2832);ctx.fill()});
+  const gran=[];
+  if(t>=T_B+D.plegado*0.3){const sw=1+0.75*Sc;
+    [[-0.5,0.66],[0.08,0.74],[0.56,0.6]].forEach((q,i)=>{const gx=cx+q[0]*R,gy=cy+q[1]*R,rx=R*0.15*sw,ry=R*0.105*sw;gran.push([gx,gy,rx,ry]);
+      const gg=ctx.createRadialGradient(gx-rx*0.3,gy-ry*0.35,1,gx,gy,rx);gg.addColorStop(0,rgb(mix(LC.starch,WHITE,0.5)));gg.addColorStop(1,rgb(mix(LC.starch,BLACK,0.12)));
+      ctx.fillStyle=gg;ctx.beginPath();ctx.ellipse(gx,gy,rx,ry,i*0.5-0.4,0,6.2832);ctx.fill();
+      const ra=1-smooth(Sc*1.4);if(ra>0.02){ctx.strokeStyle=rgb(LC.ring,0.7*ra);ctx.lineWidth=0.7;for(let k=1;k<=3;k++){ctx.beginPath();ctx.ellipse(gx,gy,rx*k/4,ry*k/4,i*0.5-0.4,0,6.2832);ctx.stroke()}}})
+    // retrogradación al enfriar: cadenas de almidón que se alinean en zonas ordenadas
+    if(retro>0.02){ctx.lineWidth=Math.max(0.9,R*0.022);
+      for(let i=0;i<gran.length-1;i++){const a=gran[i],b=gran[i+1],mx2=(a[0]+b[0])/2,my2=(a[1]+b[1])/2-R*0.02;
+        for(let k=-1;k<=1;k++){const off=k*R*0.045*(2-retro);ctx.strokeStyle=rgb(LC.ring,0.9*retro);ctx.beginPath();ctx.moveTo(mx2-R*0.11,my2+off+(1-retro)*R*0.04*k);ctx.lineTo(mx2+R*0.11,my2+off-(1-retro)*R*0.04*k);ctx.stroke()}}}}
+  // partícula LDL: en SEP, hasta que forma gel en el horno
+  if(yolky){const T=inOven?m.Tc(u):20,a=1-smooth((T-60)/8);if(a>0.02){const lx=cx-R*0.12,ly=cy+R*0.38,lr=R*0.12;bead(ctx,lx,ly,lr,LC.ldl,a);for(let k=0;k<12;k++){const an=k/12*6.2832;bead(ctx,lx+Math.cos(an)*lr,ly+Math.sin(an)*lr,br*0.55,LC.head,a)}}}
+  // película en la interfase
+  const n=8,pf=protFrac(id),ord=ORDER8[id],w=t<T_B?t/T_B:1;
+  const aP=smooth((w-0.08)/0.7),aL=smooth(w/0.22),spacing=(2*R*0.9/n)*(1+0.3*ex);
+  const tear=inOven&&m.p.e<0.85&&ex>0.5&&Sc<0.5?smooth((ex-0.5)/0.25)*(1-m.p.e)*2.2:0,tearX=cx+spacing*0.5,tearW=tear*spacing*1.5;
+  const xs=[];for(let j=0;j<n;j++)xs.push(cx+(j-(n-1)/2)*spacing);
+  const types=xs.map((x,j)=>ord[j]<Math.round(pf*n)?'p':'l');
+  const shown=xs.map(x=>!(tearW>0&&Math.abs(x-tearX)<tearW/2+spacing*0.25));
+  const ads=j=>types[j]==='p'?((ord[j]/n)<aP||t>=T_B):(aL>(ord[j]/n)*0.9||t>=T_B);
+  const den=c=>mix(c,LC.den,0.55*net);
+  const chainPts=j=>{const x=xs[j],half=spacing*0.42,pts=[];for(let k=0;k<5;k++){const xx=x-half+2*half*k/4,yy=curve(xx)+(k%2?R*0.055:-R*0.035);pts.push([xx,yy,k%2])}return pts};
+  if(net>0&&gran.length){for(let j=0;j<n;j++){if(types[j]!=='p'||!shown[j])continue;const pt=chainPts(j)[2],gr=gran.reduce((b,q)=>Math.hypot(q[0]-pt[0],q[1]-pt[1])<Math.hypot(b[0]-pt[0],b[1]-pt[1])?q:b);bond(ctx,pt[0],pt[1],gr[0],gr[1]-gr[3]*0.8,Math.max(1,R*0.028),LC.den,0.55*net)}
+    for(let i=0;i<gran.length-1;i++){const a=gran[i],b=gran[i+1];bond(ctx,a[0]+a[2]*0.8,a[1],b[0]-b[2]*0.8,b[1],Math.max(1,R*0.028),LC.den,0.45*net)}}
+  for(let j=0;j<n;j++){if(!shown[j])continue;const x=xs[j];
+    if(types[j]==='p'){
+      if(ads(j)){const pts=chainPts(j);for(let k=0;k<4;k++)bond(ctx,pts[k][0],pts[k][1],pts[k+1][0],pts[k+1][1],Math.max(1,R*0.025),LC.bond,0.9);pts.forEach(q=>bead(ctx,q[0],q[1],br,den(q[2]?LC.phil:LC.hyd)))}
+      else{const bx=x,by=curve(x)+R*(0.3+0.08*(j%3)),off=[[0,0],[1,0.2],[0.4,0.9],[-0.6,0.7],[-0.9,-0.2],[-0.2,-0.8],[0.8,-0.7]];
+        off.forEach((o,k)=>{if(k)bond(ctx,bx+off[k-1][0]*br*1.3,by+off[k-1][1]*br*1.3,bx+o[0]*br*1.3,by+o[1]*br*1.3,Math.max(0.8,R*0.02),LC.bond,0.8)});off.forEach((o,k)=>bead(ctx,bx+o[0]*br*1.3,by+o[1]*br*1.3,br*0.85,k%2?LC.phil:LC.hyd))}
+    }else{const y=ads(j)?curve(x):curve(x)+R*0.32;
+      [-1,1].forEach(sd=>{let px=x+sd*br*0.45,py=y;for(let k=1;k<=3;k++){const nx=x+sd*(br*0.45+k*br*0.18),ny=y-k*br*1.05;bond(ctx,px,py,nx,ny,Math.max(0.8,R*0.018),LC.tail,0.9);bead(ctx,nx,ny,br*0.5,LC.tail);px=nx;py=ny}});
+      bead(ctx,x,y+br*0.2,br*1.05,LC.head)}
+  }
+  for(let j=0;j<n-1;j++){if(types[j]==='p'&&types[j+1]==='p'&&shown[j]&&shown[j+1]&&ads(j)&&ads(j+1)&&(w>0.45||t>=T_B)){const a=chainPts(j)[3],b=chainPts(j+1)[1];bond(ctx,a[0],a[1],b[0],b[1],Math.max(1.1,R*0.03),LC.sul,1);bead(ctx,(a[0]+b[0])/2-1.2,(a[1]+b[1])/2,br*0.55,LC.sul);bead(ctx,(a[0]+b[0])/2+1.2,(a[1]+b[1])/2,br*0.55,LC.sul)}}
+  ctx.restore();
+  ctx.strokeStyle=rgb(TK.line);ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,R,0,6.2832);ctx.stroke();
+  if(R>38){ctx.font=`500 8px ${MONO}`;ctx.textAlign='center';[['aire',cy-R*0.8],['agua',cy+R*0.86]].forEach(([l,y])=>{ctx.fillStyle='rgba(255,255,255,.85)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(cx-13,y-7,26,11,5);else ctx.rect(cx-13,y-7,26,11);ctx.fill();ctx.fillStyle='rgba(80,74,70,.9)';ctx.fillText(l,cx,y+1)})}
+  const st=stageOf(t);let cap;
+  if(st===0)cap=id==='AF'?'Las proteínas de la clara se despliegan y se unen con puentes S–S (amarillo): película fuerte, lenta de formar.':(sepView==='yema'?'Espuma de yema: los lípidos (violeta) llegan antes a la burbuja. Película rápida y menos estable.':'Espuma de clara de SEP: película solo de proteína, como en AF.');
+  else if(st<=2)cap=id==='AF'?'La película de proteína resiste el plegado.':'Al unir las espumas, lípidos de la yema entran en burbujas de clara: película mixta.';
+  else if(st===3&&t<T_O&&Sc<0.3)cap=id==='AF'?'La película se estira con la burbuja sin romperse.':'Película mixta, menos elástica: se rompe al estirarse.';
+  else if(st===5&&retro>0.15)cap='Al enfriar, cadenas de almidón se reasocian en zonas ordenadas (líneas paralelas): empieza la retrogradación.';
+  else cap='Almidón hinchado (ladrillos) y proteína coagulada (mortero, en granate).';
+  if(UI[id]._cap!==cap){UI[id].cap.textContent=cap;UI[id]._cap=cap}
+}
+
+/* =====================================================================
+   GRÁFICAS: curvas de AF y SEP con un cursor común
+   ===================================================================== */
+const NSV='http://www.w3.org/2000/svg';
+const sv=(n,a)=>{const e=document.createElementNS(NSV,n);for(const k in a)e.setAttribute(k,a[k]);return e};
+const CW=320,CH=128,ML=36,MR=10,MT=10,MB=22,PW=CW-ML-MR,PH=CH-MT-MB;
+// Grupo antes del horno: eje x = tiempo de la animación (0 → T_M). Grupo horno: eje x = % de horno.
+const CHART_DEF={
+  pre:[
+    {k:'rho',t:'Densidad del batido',u:'g/mL',y:[0,1.3],ticks:[0,0.4,0.8,1.2],f:(id,x)=>preOven(id,x).rho},
+    {k:'phi',t:'Fracción de aire',u:'%',y:[0,90],ticks:[0,30,60,90],f:(id,x)=>preOven(id,x).phi*100},
+  ],
+  oven:[
+    {k:'T',t:'Temperatura del centro',u:'°C',y:[20,100],ticks:[25,50,84,94],band:[P.FIX_START,P.FIX_END],f:Tt},
+    {k:'eta',t:'Viscosidad relativa',u:'η/η₀, índice',y:[0,1.2],ticks:[0,0.4,0.8,1.2],ref:0.1,clip:true,f:etaT},
+    {k:'exp',t:'Grado de expansión',u:'%',y:[0,90],ticks:[0,30,60,90],f:expT},
+    {k:'ret',t:'Gas retenido',u:'%',y:[50,100],ticks:[50,75,100],f:retT},
+    {k:'fix',t:'Fijación del centro',u:'%',y:[0,100],ticks:[0,50,100],f:fixT},
+    {k:'ve',t:'Volumen específico',u:'cm³/g',y:[1.5,5],ticks:[2,3,4,5],f:veT},
+  ]};
+const chartsEl=document.getElementById('charts'),chTitle=document.getElementById('chTitle');
+let chGroup='',CHS=[];
+const xDomain=g=>g==='pre'?[0,T_M]:[T_M,T_END];
+function buildCharts(force){
+  const g=t<T_M?'pre':'oven';if(g===chGroup&&!force)return;chGroup=g;chartsEl.innerHTML='';CHS=[];
+  chTitle.textContent=g==='pre'?'Batido, plegado y molde':'Horno y enfriado';
+  const [x0,x1]=xDomain(g),X=v=>ML+(v-x0)/(x1-x0)*PW;
+  CHART_DEF[g].forEach(def=>{
+    const box=document.createElement('div');box.className='ch';box.innerHTML=`<h3>${def.t} <small>${def.u}</small></h3>`;
+    const s=sv('svg',{viewBox:`0 0 ${CW} ${CH}`,role:'img','aria-label':`${def.t}: AF y SEP`});box.appendChild(s);chartsEl.appendChild(box);
+    const Y=v=>MT+PH-(clamp(v,def.y[0],def.y[1])-def.y[0])/(def.y[1]-def.y[0])*PH;
+    const lab=(x,l,anchor)=>{const tx=sv('text',{x,y:CH-7,'text-anchor':anchor,'font-size':10,fill:'var(--muted)','font-family':MONO});tx.textContent=l;s.appendChild(tx)};
+    if(g==='pre'){[[0,T_B,'batido'],[T_B,T_P,'plegado'],[T_P,T_M,'molde']].forEach(([a,b,l],i)=>{if(i%2)s.appendChild(sv('rect',{x:X(a),y:MT,width:X(b)-X(a),height:PH,fill:'var(--tint)'}));lab((X(a)+X(b))/2,l,'middle')})}
+    else{s.appendChild(sv('rect',{x:X(T_X),y:MT,width:X(T_O)-X(T_X),height:PH,fill:'var(--tint)'}));
+      s.appendChild(sv('line',{x1:X(T_O),x2:X(T_O),y1:MT,y2:MT+PH,stroke:'var(--muted)','stroke-width':1,'stroke-dasharray':'3 3'}));
+      lab(X(T_M),'horno','start');lab((X(T_X)+X(T_O))/2,'fijación','middle');lab(X(T_O)+3,'enfriado','start')}
+    if(def.band)s.appendChild(sv('rect',{x:ML,y:Y(def.band[1]),width:PW,height:Y(def.band[0])-Y(def.band[1]),fill:'var(--accent)','fill-opacity':0.1}));
+    def.ticks.forEach(v=>{s.appendChild(sv('line',{x1:ML,x2:ML+PW,y1:Y(v),y2:Y(v),stroke:'var(--line)','stroke-width':1}));const tx=sv('text',{x:ML-5,y:Y(v)+3.5,'text-anchor':'end','font-size':10,fill:'var(--muted)','font-family':MONO});tx.textContent=fmt(v,v%1?1:0);s.appendChild(tx)});
+    if(def.ref!==undefined){s.appendChild(sv('line',{x1:ML,x2:ML+PW,y1:Y(def.ref),y2:Y(def.ref),stroke:'var(--accent)','stroke-width':1,'stroke-dasharray':'2 3'}));const tx=sv('text',{x:ML+3,y:Y(def.ref)-3,'font-size':9.5,fill:'var(--accent)','font-family':MONO});tx.textContent='10 %';s.appendChild(tx)}
+    s.appendChild(sv('line',{x1:ML,x2:ML+PW,y1:MT+PH,y2:MT+PH,stroke:'var(--muted)','stroke-width':1}));
+    const cid='clip'+def.k+Math.random().toString(36).slice(2,7),cp=sv('clipPath',{id:cid}),cr=sv('rect',{x:0,y:0,width:ML,height:CH});cp.appendChild(cr);s.appendChild(cp);
+    const dots={};
+    IDS.forEach(id=>{let d='',pen=false;const N=220;for(let i=0;i<=N;i++){const x=x0+(x1-x0)*i/N,v=def.f(id,x);if(v===null){pen=false;continue}d+=(pen?'L':'M')+X(x).toFixed(1)+' '+Y(v).toFixed(1);pen=true}
+      const col=`var(--c-${id.toLowerCase()})`,dash=id==='SEP'?'6 3':'';
+      s.appendChild(sv('path',{d,fill:'none',stroke:col,'stroke-width':1.6,'stroke-dasharray':dash,opacity:0.22}));
+      s.appendChild(sv('path',{d,fill:'none',stroke:col,'stroke-width':2.4,'stroke-dasharray':dash,'stroke-linejoin':'round','clip-path':`url(#${cid})`}));
+      dots[id]=sv('circle',{r:3.6,fill:'var(--panel)',stroke:col,'stroke-width':2});s.appendChild(dots[id])});
+    const cur=sv('line',{y1:MT,y2:MT+PH,stroke:'var(--ink)','stroke-width':1,'stroke-dasharray':'2 3'});s.appendChild(cur);
+    const pick=e=>{const r=s.getBoundingClientRect(),vx=(e.clientX-r.left)/r.width*CW;setT(x0+clamp((vx-ML)/PW,0,1)*(x1-x0));pause()};
+    let dr=false;s.addEventListener('pointerdown',e=>{dr=true;try{s.setPointerCapture(e.pointerId)}catch(_){};pick(e)});s.addEventListener('pointermove',e=>{if(dr)pick(e)});s.addEventListener('pointerup',()=>{dr=false});
+    CHS.push({def,X,Y,cr,cur,dots});
+  });
+}
+function updateCharts(){
+  buildCharts(false);const [x0,x1]=xDomain(chGroup),x=clamp(t,x0,x1);
+  CHS.forEach(c=>{const px=c.X(x);c.cr.setAttribute('width',Math.max(0,px));c.cur.setAttribute('x1',px);c.cur.setAttribute('x2',px);
+    IDS.forEach(id=>{const v=c.def.f(id,x);if(v===null){c.dots[id].setAttribute('opacity',0);return}c.dots[id].setAttribute('opacity',1);c.dots[id].setAttribute('cx',px);c.dots[id].setAttribute('cy',c.Y(v))})});
+}
+
+/* =====================================================================
+   BUCLE
+   ===================================================================== */
+const lossLegend=document.getElementById('lossLegend'), stopEach=document.getElementById('stopEach');
+function frame(now){
+  if(playing){if(last!==null){const prev=t;t+=Math.min(0.1,(now-last)/1000)*speed;
+      if(stopEach.checked){for(const s of ST){if(prev<s.t1&&t>=s.t1&&s.t1<T_END){t=s.t1;playing=false;syncPlay();break}}}}
+    last=now;if(t>=T_END){t=T_END;playing=false;syncPlay()}dirty=true}
+  else last=null;
+  const anim=playing||(!reduceMotion&&((t>=T_M&&t<T_O+3.2)||t<T_P));
+  if(dirty||anim){
+    IDS.forEach(id=>{const U=UI[id],{ctx,W,H}=fit(U.cv);drawScene(ctx,W,H,id);drawLupa(id);const s=stateText(id);if(U._st!==s){U.st.textContent=s;U._st=s}});
+    UI.SEP.sepv.hidden=t>=T_B;
+  }
+  if(dirty){
+    const i=stageOf(t);
+    stepEls.forEach((s,k)=>{const p=ST[k],f=clamp((t-p.t0)/(p.t1-p.t0),0,1);s.querySelector('i').style.width=(f*100).toFixed(1)+'%';s.classList.toggle('on',k===i)});
+    stepsEl.setAttribute('aria-valuenow',Math.round(t/T_END*100));stepsEl.setAttribute('aria-valuetext',`${ST[i].n}`);
+    lossLegend.hidden=!(i===3||i===4);
+    renderNarr();renderProc();renderChips();updateCharts();
+    dirty=false;
+  }
+  requestAnimationFrame(frame);
+}
+stepsEl.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft')e.stopPropagation();if(e.key==='ArrowRight'){setT(t+1);pause();e.preventDefault()}else if(e.key==='ArrowLeft'){setT(t-1);pause();e.preventDefault()}});
+window.addEventListener('resize',()=>{dirty=true});
+syncPlay();buildCharts(true);
+requestAnimationFrame(frame);
+// Exponer el modelo para comprobaciones (sin efecto en la página)
+window.__SIM={M,P,ST,U_SPLIT,preOven,Vt,veT,retT,etaT,Tt};
+})();
+</script>
+
+</body>
+</html>
